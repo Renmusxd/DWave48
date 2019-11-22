@@ -8,9 +8,10 @@ class MockSample:
 
 
 class Graph:
-    def __init__(self, j=1.0):
+    def __init__(self, j=1.0, clone_strength=5.0):
         self.unit_cells = set()
         self.j = j
+        self.clone = clone_strength
         self.connection_cells = {
             # Front
             (0, -1, True): 0,
@@ -24,11 +25,17 @@ class Graph:
             (1, 0, False): 7,
         }
         self.existing_cell_connections = set()
+        self.periodic_boundaries = set()
+
+    def add_periodic_boundary(self, loc, adj):
+        if loc in self.unit_cells:
+            raise Exception("Attempting to superimpose boundary and cell: {}".format(loc))
+        self.periodic_boundaries.add((loc, adj))
 
     def build(self):
         connections = {}
         for x, y, front in self.unit_cells:
-            if ((x + y) % 2) == 0:
+            if is_type_a(x, y):
                 connections.update(make_unit_cell_a(x, y, j=self.j, front=front))
             else:
                 connections.update(make_unit_cell_b(x, y, j=self.j, front=front))
@@ -50,6 +57,17 @@ class Graph:
                 max_v = max(abs_va, abs_vb)
                 edge = (min_v, max_v)
                 connections.update({edge: -self.j})
+        for loc, adj in self.periodic_boundaries:
+            if is_type_a(*loc):
+                cella, cellb = loc, adj
+            else:
+                cella, cellb = adj, loc
+            dx = cellb[0] - cella[0]
+            dy = cellb[1] - cella[1]
+            v_front = self.connection_cells[(dx, dy, True)]
+            v_rear = self.connection_cells[(dx, dy, False)]
+            connections.update(make_boundary_cell(loc, adj, v_front, v_rear, -self.j, -self.clone))
+
         return connections
 
     def add_cells(self, cells, fronts=None):
@@ -79,6 +97,38 @@ class Graph:
                 oy = y + dy
                 if (ox, oy, front) in self.unit_cells:
                     self.connect_cells((x, y), (ox, oy), front=front)
+
+
+def make_boundary_cell(boundary_cell, connected_cell, v_front, v_rear, bond_j, clone_j, vars_per_cell=8):
+    def make_edge(c1, c2, v1, v2):
+        abs_va = var_num(c1[0], c1[1], v1)
+        abs_vb = var_num(c2[0], c2[1], v2)
+        # Enter them in sorted order
+        min_v = min(abs_va, abs_vb)
+        max_v = max(abs_va, abs_vb)
+        return min_v, max_v
+
+    def make_edge_for_v(c1, c2, v):
+        return make_edge(c1, c2, v, v)
+
+    # variable on opposite side of unit cell from front
+    v_intermediate = (v_front + vars_per_cell//2) % vars_per_cell
+
+    front_clone_edge = make_edge_for_v(boundary_cell, connected_cell, v_front)
+    extra_clone_edge = make_edge(boundary_cell, boundary_cell, v_front, v_intermediate)
+    front_rear_edge = make_edge(boundary_cell, boundary_cell, v_intermediate, v_rear)
+    rear_clone_edge = make_edge_for_v(boundary_cell, connected_cell, v_rear)
+
+    return {
+        front_clone_edge: clone_j,
+        extra_clone_edge: clone_j,
+        front_rear_edge: bond_j,
+        rear_clone_edge: clone_j
+    }
+
+
+def is_type_a(x, y):
+    return ((x + y) % 2) == 0
 
 
 def chimera_index(unit_cell, var_index):
@@ -111,10 +161,10 @@ def make_unit_cell_a(unit_x, unit_y, j=1.0, front=True):
     else:
         # Above but +2
         return convert_for_cell(unit_x, unit_y, {
-            (2, 6): bond,
+            (2, 6): -bond,
             (3, 6): bond,
             (3, 7): bond,
-            (2, 7): -bond,
+            (2, 7): bond,
         })
 
 
@@ -132,49 +182,49 @@ def make_unit_cell_b(unit_x, unit_y, j=1.0, front=True):
         # Above but +2
         return convert_for_cell(unit_x, unit_y, {
             (2, 6): bond,
-            (3, 6): -bond,
-            (3, 7): bond,
+            (3, 6): bond,
+            (3, 7): -bond,
             (2, 7): bond,
         })
 
-
-def make_graph_with_unit_cells(unit_cells, j=1.0):
-    unit_cells = set(unit_cells)
-    indiv_cell_graphs = [
-        make_unit_cell_a(x, y, j=j) if ((x+y) % 2) == 0 else make_unit_cell_b(x, y, j=j)
-        for x, y in unit_cells
-    ]
-    full_dict = {}
-    for d in indiv_cell_graphs:
-        full_dict.update(d)
-
-    deltas_and_vars = {
-        (0, -1): 0,
-        (0, 1): 1,
-        (-1, 0): 4,
-        (1, 0): 5,
-    }
-
-    # Now add connections
-    for x, y in unit_cells:
-        # type is false (A) or true (B)
-        own_type = ((x+y) % 2) == 1
-
-        for (dx, dy), v in deltas_and_vars.items():
-            if own_type:
-                ox, oy = x - dx, y - dy
-            else:
-                ox, oy = x + dx, y + dy
-            if (ox, oy) in unit_cells:
-                # For B sublattice, swap nodes
-                abs_va = var_num(x, y, v)
-                abs_vb = var_num(ox, oy, v)
-                # Enter them in sorted order
-                min_v = min(abs_va, abs_vb)
-                max_v = max(abs_va, abs_vb)
-                edge = (min_v, max_v)
-                full_dict.update({edge: -j})
-    return full_dict
+#
+# def make_graph_with_unit_cells(unit_cells, j=1.0):
+#     unit_cells = set(unit_cells)
+#     indiv_cell_graphs = [
+#         make_unit_cell_a(x, y, j=j) if is_type_a(x, y) else make_unit_cell_b(x, y, j=j)
+#         for x, y in unit_cells
+#     ]
+#     full_dict = {}
+#     for d in indiv_cell_graphs:
+#         full_dict.update(d)
+#
+#     deltas_and_vars = {
+#         (0, -1): 0,
+#         (0, 1): 1,
+#         (-1, 0): 4,
+#         (1, 0): 5,
+#     }
+#
+#     # Now add connections
+#     for x, y in unit_cells:
+#         # type is false (A) or true (B)
+#         own_type = ((x+y) % 2) == 1
+#
+#         for (dx, dy), v in deltas_and_vars.items():
+#             if own_type:
+#                 ox, oy = x - dx, y - dy
+#             else:
+#                 ox, oy = x + dx, y + dy
+#             if (ox, oy) in unit_cells:
+#                 # For B sublattice, swap nodes
+#                 abs_va = var_num(x, y, v)
+#                 abs_vb = var_num(ox, oy, v)
+#                 # Enter them in sorted order
+#                 min_v = min(abs_va, abs_vb)
+#                 max_v = max(abs_va, abs_vb)
+#                 edge = (min_v, max_v)
+#                 full_dict.update({edge: -j})
+#     return full_dict
 
 
 def make_configs(all_vars):

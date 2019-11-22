@@ -20,7 +20,7 @@ def make_run_dir(data_dir, run_format="run_{}"):
     return pathname
 
 
-def make_run_and_save(graph, num_reads=1000, data_dir="./data", run_format="run_{}"):
+def make_run_and_save(graph, num_reads=1, data_dir="./data", run_format="run_{}"):
     base_dir = make_run_dir(data_dir, run_format=run_format)
 
     with open(os.path.join(base_dir, "network.pickle"), "wb") as w:
@@ -83,6 +83,7 @@ def plot(base_dir, graph, data=None):
         distance_stdv = numpy.nan_to_num(distance_stdv)
 
         pyplot.imshow(var_corr, interpolation='nearest')
+        pyplot.colorbar()
         pyplot.savefig(os.path.join(base_dir, "correlations.svg"))
         pyplot.clf()
 
@@ -115,12 +116,25 @@ if __name__ == "__main__":
     run_args = []
     if len(sys.argv) == 1:
         graph = graphbuilder.Graph()
+
+        L = 3
         graph.add_cells([
             (x, y)
-            for x in range(16)
-            for y in range(16)
+            for x in range(1,L+1)
+            for y in range(1,L+1)
         ])
+        graph.add_cells([
+            (x, y)
+            for x in range(1,L+1)
+            for y in range(1,L+1)
+        ], [False]*(L**2))
         graph.connect_all()
+        for i in range(1,L+1):
+            # graph.add_periodic_boundary((i,0), (i,1))
+            # graph.add_periodic_boundary((i,L+1), (i,L))
+            graph.add_periodic_boundary((0,i), (1,i))
+            graph.add_periodic_boundary((L+1,i), (L,i))
+
         graph_network = graph.build()
         base_dir, data = make_run_and_save(graph_network)
         run_args = [(base_dir, graph_network, data)]

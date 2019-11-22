@@ -1,6 +1,7 @@
 import io
 import numpy
 import graphanalysis
+import graphbuilder
 
 
 def relative_pos_of_relative_index(relative_index):
@@ -23,7 +24,7 @@ def get_var_pos(index, vars_per_cell=8, unit_cells_per_row=16, dist=10):
 
     x, y = position_of_unit_cell(unit_cell_x, unit_cell_y, dist=dist)
     dx, dy = relative_pos_of_relative_index(var_relative)
-    if (unit_cell_x + unit_cell_y) % 2:
+    if not graphbuilder.is_type_a(unit_cell_x, unit_cell_y):
         dx = -dx
         dy = -dy
     return x + dx, y + dy
@@ -47,9 +48,9 @@ def make_edges_contents(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, c
     if color_fn is None:
         color_fn = default_color_fn
 
-    minx = 0
+    minx = 1e32
     maxx = 0
-    miny = 0
+    miny = 1e32
     maxy = 0
 
     debug_details_values = []
@@ -73,7 +74,11 @@ def make_edges_contents(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, c
         to_draw_values.append((x1, y1, x2, y2, color_fn(var_a, var_b)))
 
     def normalize(x, y):
-        return (x - minx) / float(maxx - minx), (y - miny) / float(maxy - miny)
+        lx = minx - 1
+        ly = miny - 1
+        mx = maxx + 1
+        my = maxy + 1
+        return (x - lx) / float(mx - lx), (y - ly) / float(my - ly)
 
     output = io.StringIO()
     for to_draw, to_detail in zip(to_draw_values, debug_details_values):
