@@ -7,23 +7,37 @@ class MockSample:
         return 0
 
 
+def get_connection_cells():
+    """Gives direction in terms of A to B"""
+    return {
+        # Front
+        (0, -1, True): 0,
+        (0, 1, True): 1,
+        (-1, 0, True): 4,
+        (1, 0, True): 5,
+        # Rear
+        (0, -1, False): 2,
+        (0, 1, False): 3,
+        (-1, 0, False): 6,
+        (1, 0, False): 7,
+    }
+
+
+def get_var_to_connection_map():
+    """Gives direction in terms of A to B"""
+    return {
+        v: k for k, v in get_connection_cells().items()
+    }
+
+
 class Graph:
+    connection_cells = get_connection_cells()
+    var_connections = get_var_to_connection_map()
+
     def __init__(self, j=1.0, clone_strength=5.0):
         self.unit_cells = set()
         self.j = j
         self.clone = clone_strength
-        self.connection_cells = {
-            # Front
-            (0, -1, True): 0,
-            (0, 1, True): 1,
-            (-1, 0, True): 4,
-            (1, 0, True): 5,
-            # Rear
-            (0, -1, False): 2,
-            (0, 1, False): 3,
-            (-1, 0, False): 6,
-            (1, 0, False): 7,
-        }
         self.existing_cell_connections = set()
         self.periodic_boundaries = set()
 
@@ -32,7 +46,7 @@ class Graph:
             raise Exception("Attempting to superimpose boundary and cell: {}".format(loc))
         self.periodic_boundaries.add((loc, adj))
 
-    def build(self):
+    def build(self, h=0):
         connections = {}
         for x, y, front in self.unit_cells:
             if is_type_a(x, y):
@@ -48,8 +62,8 @@ class Graph:
                 cella, cellb = cell_two, cell_one
             dx = cellb[0] - cella[0]
             dy = cellb[1] - cella[1]
-            if (dx, dy, front) in self.connection_cells:
-                v = self.connection_cells[(dx, dy, front)]
+            if (dx, dy, front) in Graph.connection_cells:
+                v = Graph.connection_cells[(dx, dy, front)]
                 abs_va = var_num(cella[0], cella[1], v)
                 abs_vb = var_num(cellb[0], cellb[1], v)
                 # Enter them in sorted order
@@ -57,6 +71,13 @@ class Graph:
                 max_v = max(abs_va, abs_vb)
                 edge = (min_v, max_v)
                 connections.update({edge: -self.j})
+
+        # Default hs are same for all variables
+        if h:
+            hs = {v: h for v in set(v for vs in connections for v in vs)}
+        else:
+            hs = {}
+
         for loc, adj in self.periodic_boundaries:
             if is_type_a(*loc):
                 cella, cellb = loc, adj
@@ -64,11 +85,14 @@ class Graph:
                 cella, cellb = adj, loc
             dx = cellb[0] - cella[0]
             dy = cellb[1] - cella[1]
-            v_front = self.connection_cells[(dx, dy, True)]
-            v_rear = self.connection_cells[(dx, dy, False)]
-            connections.update(make_boundary_cell(loc, adj, v_front, v_rear, -self.j, -self.clone))
+            v_front = Graph.connection_cells[(dx, dy, True)]
+            v_rear = Graph.connection_cells[(dx, dy, False)]
+            clone_edges = make_boundary_cell(loc, adj, v_front, v_rear, -self.j, -self.clone)
+            connections.update(clone_edges)
+            for (va, vb), j in clone_edges.items():
+                raise NotImplementedError("Have not implemented periodic boundary conditions with transverse field.")
 
-        return connections
+        return hs, connections
 
     def add_cells(self, cells, fronts=None):
         if fronts is None:
@@ -90,7 +114,7 @@ class Graph:
     def connect_all(self):
         # Now add connections
         for x, y, front in self.unit_cells:
-            for dx, dy, conn_side in self.connection_cells:
+            for dx, dy, conn_side in Graph.connection_cells:
                 if front != conn_side:
                     continue
                 ox = x + dx
@@ -186,45 +210,6 @@ def make_unit_cell_b(unit_x, unit_y, j=1.0, front=True):
             (3, 7): -bond,
             (2, 7): bond,
         })
-
-#
-# def make_graph_with_unit_cells(unit_cells, j=1.0):
-#     unit_cells = set(unit_cells)
-#     indiv_cell_graphs = [
-#         make_unit_cell_a(x, y, j=j) if is_type_a(x, y) else make_unit_cell_b(x, y, j=j)
-#         for x, y in unit_cells
-#     ]
-#     full_dict = {}
-#     for d in indiv_cell_graphs:
-#         full_dict.update(d)
-#
-#     deltas_and_vars = {
-#         (0, -1): 0,
-#         (0, 1): 1,
-#         (-1, 0): 4,
-#         (1, 0): 5,
-#     }
-#
-#     # Now add connections
-#     for x, y in unit_cells:
-#         # type is false (A) or true (B)
-#         own_type = ((x+y) % 2) == 1
-#
-#         for (dx, dy), v in deltas_and_vars.items():
-#             if own_type:
-#                 ox, oy = x - dx, y - dy
-#             else:
-#                 ox, oy = x + dx, y + dy
-#             if (ox, oy) in unit_cells:
-#                 # For B sublattice, swap nodes
-#                 abs_va = var_num(x, y, v)
-#                 abs_vb = var_num(ox, oy, v)
-#                 # Enter them in sorted order
-#                 min_v = min(abs_va, abs_vb)
-#                 max_v = max(abs_va, abs_vb)
-#                 edge = (min_v, max_v)
-#                 full_dict.update({edge: -j})
-#     return full_dict
 
 
 def make_configs(all_vars):

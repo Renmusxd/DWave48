@@ -1,5 +1,6 @@
 import numpy
 import collections
+import graphbuilder
 
 
 def flatten_dicts(samples):
@@ -24,7 +25,7 @@ def calculate_correlation_matrix(variable_values):
     :param variable_values: nxd matrix of n variables and their values across d runs.
     :return: nxn matrix of the cosine similarities
     """
-    variable_values = variable_values*1.0
+    variable_values = variable_values * 1.0
     m = numpy.matmul(variable_values, variable_values.T)
     v_sqr = numpy.square(variable_values)
     v_norm_sqr = numpy.sum(v_sqr, -1)
@@ -60,10 +61,10 @@ def variable_distances(edges):
     :return: matrix of distances [var_a, var_b] and array of index to variable number
     """
     all_vars = list(sorted(set(v for vars in edges for v in vars)))
-    var_lookup = {k: i for i,k in enumerate(all_vars)}
+    var_lookup = {k: i for i, k in enumerate(all_vars)}
     n_vars = len(all_vars)
     # Maximum size to which we can safely multiply by 2.
-    dist_mat = (numpy.zeros((n_vars, n_vars), dtype=numpy.uint32) - 1)//2
+    dist_mat = (numpy.zeros((n_vars, n_vars), dtype=numpy.uint32) - 1) // 2
     numpy.fill_diagonal(dist_mat, 0)
     for va, vb in edges:
         ia, ib = var_lookup[va], var_lookup[vb]
@@ -78,26 +79,46 @@ def variable_distances(edges):
 
 
 def calculate_correlation_function(edges, samples):
+    """
+    Calculate correlations as a function of distance for each variable.
+    :param edges:
+    :param samples:
+    :return:
+    """
     var_map, var_mat = flatten_dicts(samples)
     distances, all_vars = variable_distances(edges)
     var_corr = calculate_correlation_matrix(var_mat)
     # max distance (protected from infinity)
     max_dist = min(numpy.max(distances), len(edges))
-    distance_corrs = numpy.zeros((len(all_vars), max_dist+1))
-    distance_stdv = numpy.zeros((len(all_vars), max_dist+1))
-    for i,v in enumerate(all_vars):
-        totals = numpy.zeros(max_dist+1)
+    distance_corrs = numpy.zeros((len(all_vars), max_dist + 1))
+    distance_stdv = numpy.zeros((len(all_vars), max_dist + 1))
+    for i, v in enumerate(all_vars):
+        totals = numpy.zeros(max_dist + 1)
         for j in range(len(all_vars)):
-            corr = var_corr[i,j]
-            d = distances[i,j]
+            corr = var_corr[i, j]
+            d = distances[i, j]
             if d <= max_dist:
                 totals[d] += 1
                 distance_corrs[i, d] += corr
-        distance_corrs[i,:] = distance_corrs[i,:] / totals
+        distance_corrs[i, :] = distance_corrs[i, :] / totals
         for j in range(len(all_vars)):
-            corr = var_corr[i,j]
-            d = distances[i,j]
+            corr = var_corr[i, j]
+            d = distances[i, j]
             if d <= max_dist:
-                distance_stdv[i, d] += (corr - distance_corrs[i,d])**2
-        distance_stdv[i,:] = numpy.sqrt(distance_stdv[i,:] / totals)
+                distance_stdv[i, d] += (corr - distance_corrs[i, d]) ** 2
+        distance_stdv[i, :] = numpy.sqrt(distance_stdv[i, :] / totals)
     return var_corr, distance_corrs, distance_stdv, all_vars
+
+
+def is_unit_cell_type_a(unit_x, unit_y):
+    return ((unit_x + unit_y) % 2) == 0
+
+
+def calculate_variable_direction(var_index, vars_per_cell=8, unit_cells_per_row=16):
+    unit_x, unit_y, rel_var = get_var_traits(var_index, vars_per_cell=vars_per_cell,
+                                             unit_cells_per_row=unit_cells_per_row)
+    dx, dy, side = graphbuilder.Graph.var_connections[rel_var]
+    # dx and dy are defined as A to B, so if B then reverse
+    if not is_unit_cell_type_a(unit_x, unit_y):
+        dx, dy = -dx, -dy
+    return dx, dy

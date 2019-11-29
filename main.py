@@ -20,14 +20,16 @@ def make_run_dir(data_dir, run_format="run_{}"):
     return pathname
 
 
-def make_run_and_save(graph, num_reads=1, data_dir="./data", run_format="run_{}"):
+def make_run_and_save(graph, hs=None, num_reads=0, data_dir="./data", run_format="run_{}"):
+    if hs is None:
+        hs = {}
     base_dir = make_run_dir(data_dir, run_format=run_format)
 
     with open(os.path.join(base_dir, "network.pickle"), "wb") as w:
         pickle.dump(graph, w)
 
     if num_reads:
-        response = DWaveSampler().sample_ising({}, graph, num_reads=num_reads)
+        response = DWaveSampler().sample_ising(hs, graph, num_reads=num_reads)
         data = [({k: sample[k] for k in sample}, energy, num_occurences) for sample, energy, num_occurences in
                 response.data()]
         with open(os.path.join(base_dir, "data.pickle"), "wb") as w:
@@ -36,6 +38,34 @@ def make_run_and_save(graph, num_reads=1, data_dir="./data", run_format="run_{}"
         data = None
 
     return base_dir, data
+
+
+def draw_dimers(filename, graph, sample, front=True, color_on_orientation=True):
+
+    def color_on_orientation_fn(var_a, var_b):
+        dx_a, dy_a = graphanalysis.calculate_variable_direction(var_a)
+        dx_b, dy_b = graphanalysis.calculate_variable_direction(var_b)
+        # Vertical and horizontal bonds are green (and rare)
+        if dx_a == -dx_b or dy_a == -dy_b:
+            return "green"
+        if dx_a == dy_b and dy_a == dx_b:
+            return "red"
+        if dx_a == -dy_b and dy_a == -dx_b:
+            return "blue"
+        return "purple"
+
+    if not color_on_orientation:
+        # Basic color scheme
+        svg = graphdrawing.make_dimer_svg(graph, sample, front=front)
+        if svg:
+            with open(filename, "w") as w:
+                w.write(svg)
+    else:
+        # Orientation color scheme
+        svg = graphdrawing.make_dimer_svg(graph, sample, front=front, dimer_color_fn=color_on_orientation_fn)
+        if svg:
+            with open(filename, "w") as w:
+                w.write(svg)
 
 
 def plot(base_dir, graph, data=None):
@@ -63,19 +93,31 @@ def plot(base_dir, graph, data=None):
         lowest_e = numpy.argmin(energies)
 
         sample, energy, num_occurrences = data[lowest_e]
-        front_svg = graphdrawing.make_dimer_svg(graph, sample, front=True)
-        if front_svg:
-            with open(os.path.join(base_dir, "front_min_energy_dimers.svg"), "w") as w:
-                w.write(front_svg)
-        rear_svg = graphdrawing.make_dimer_svg(graph, sample, front=False)
-        if rear_svg:
-            with open(os.path.join(base_dir, "rear_min_energy_dimers.svg"), "w") as w:
-                w.write(rear_svg)
-        if front_svg and rear_svg:
-            svg = graphdrawing.make_combined_dimer_svg(graph, sample)
-            if svg:
-                with open(os.path.join(base_dir, "min_energy_dimers.svg"), "w") as w:
-                    w.write(svg)
+
+        draw_dimers(os.path.join(base_dir, "front_min_energy_dimers.svg"), graph, sample,
+                    front=True, color_on_orientation=False)
+        draw_dimers(os.path.join(base_dir, "front_min_energy_dimers_color.svg"), graph, sample,
+                    front=True, color_on_orientation=True)
+
+        draw_dimers(os.path.join(base_dir, "rear_min_energy_dimers.svg"), graph, sample,
+                    front=False, color_on_orientation=False)
+        draw_dimers(os.path.join(base_dir, "rear_min_energy_dimers_color.svg"), graph, sample,
+                    front=False, color_on_orientation=False)
+
+
+        # front_svg = graphdrawing.make_dimer_svg(graph, sample, front=True)
+        # if front_svg:
+        #     with open(os.path.join(base_dir, "front_min_energy_dimers.svg"), "w") as w:
+        #         w.write(front_svg)
+        # rear_svg = graphdrawing.make_dimer_svg(graph, sample, front=False)
+        # if rear_svg:
+        #     with open(os.path.join(base_dir, "rear_min_energy_dimers.svg"), "w") as w:
+        #         w.write(rear_svg)
+        # if front_svg and rear_svg:
+        #     svg = graphdrawing.make_combined_dimer_svg(graph, sample)
+        #     if svg:
+        #         with open(os.path.join(base_dir, "min_energy_dimers.svg"), "w") as w:
+        #             w.write(svg)
 
         samples = [sample for sample, _, __ in data]
         var_corr, distance_corr, distance_stdv, all_vars = graphanalysis.calculate_correlation_function(graph, samples)
@@ -117,26 +159,22 @@ if __name__ == "__main__":
     if len(sys.argv) == 1:
         graph = graphbuilder.Graph()
 
-        L = 3
+        Lx = 8
+        Ly = 16
         graph.add_cells([
             (x, y)
-            for x in range(1,L+1)
-            for y in range(1,L+1)
+            for x in range(0, Lx)
+            for y in range(0, Ly)
         ])
-        graph.add_cells([
-            (x, y)
-            for x in range(1,L+1)
-            for y in range(1,L+1)
-        ], [False]*(L**2))
         graph.connect_all()
-        for i in range(1,L+1):
-            # graph.add_periodic_boundary((i,0), (i,1))
-            # graph.add_periodic_boundary((i,L+1), (i,L))
-            graph.add_periodic_boundary((0,i), (1,i))
-            graph.add_periodic_boundary((L+1,i), (L,i))
+        hs, graph_network = graph.build(h=0)
 
-        graph_network = graph.build()
-        base_dir, data = make_run_and_save(graph_network)
+        hs = {
+            925: 5.0,
+            933: -5.0,
+        }
+
+        base_dir, data = make_run_and_save(graph_network, hs=hs, num_reads=0)
         run_args = [(base_dir, graph_network, data)]
     elif len(sys.argv) > 1:
         # Replace with a generator so that it doesn't load too much at once

@@ -100,7 +100,10 @@ def make_edges_contents(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, c
 
 
 def make_dimer_contents(broken_edges, normalize, unit_cells_per_row=16, vars_per_cell=8, dist=5,
-                        dimer_color="red", width="0.01", front=True):
+                        dimer_color_fn=None, width="0.01", front=True):
+    if dimer_color_fn is None:
+        dimer_color_fn = lambda var_a, var_b: "red"
+
     dimer_positions = []
     for var_a, var_b in broken_edges:
         if graphanalysis.is_front(var_a) != front or graphanalysis.is_front(var_b) != front:
@@ -146,15 +149,15 @@ def make_dimer_contents(broken_edges, normalize, unit_cells_per_row=16, vars_per
         title_text = "Dimer across edge between sites {}-{}".format(var_a, var_b)
         output.write(
             '<line x1="{}" y1="{}" x2="{}" y2="{}" style="stroke:{};stroke-width:{}"><title>{}</title></line>\n'.format(
-                start_x, start_y, stop_x, stop_y, dimer_color, width, title_text
+                start_x, start_y, stop_x, stop_y, dimer_color_fn(var_a, var_b), width, title_text
             ))
     return output.getvalue()
 
 
 def make_dimer_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dist=5,
-                   edge_color="gray", dimer_edge_color="black",
-                   dimer_color="red", front=True):
-    def all_grey(_, __):
+                   edge_color="gray", dimer_edge_color_fn=None,
+                   dimer_color_fn=None, front=True):
+    def all_edge_color(_, __):
         return edge_color
 
     def is_not_broken(vara, varb):
@@ -164,17 +167,23 @@ def make_dimer_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dist=5,
         else:
             return var_vals[vara] == var_vals[varb]
 
+    if dimer_edge_color_fn is None:
+        dimer_edge_color_fn = lambda _, __: "black"
+    if dimer_color_fn is None:
+        dimer_color_fn = lambda _, __: "red"
+
     edges = list(js)
     broken_edges = [edge for edge in edges if not is_not_broken(edge[0], edge[1])]
     background_edges_contents, normalize = make_edges_contents(edges, unit_cells_per_row=unit_cells_per_row,
                                                                vars_per_cell=vars_per_cell, dist=dist,
-                                                               color_fn=all_grey, front=front)
+                                                               color_fn=all_edge_color, front=front)
     if background_edges_contents:
         background_dimer_contents = make_dimer_contents(edges, normalize, unit_cells_per_row=unit_cells_per_row,
                                                         vars_per_cell=vars_per_cell, dist=dist,
-                                                        dimer_color=dimer_edge_color, width="0.005", front=front)
+                                                        dimer_color_fn=dimer_edge_color_fn, width="0.005", front=front)
         dimer_contents = make_dimer_contents(broken_edges, normalize, unit_cells_per_row=unit_cells_per_row,
-                                             vars_per_cell=vars_per_cell, dist=dist, dimer_color=dimer_color, front=front)
+                                             vars_per_cell=vars_per_cell, dist=dist, dimer_color_fn=dimer_color_fn,
+                                             front=front)
         return '<svg height="500.0pt" version="1.1" width="500.0pt" viewBox="0 0 1 1" ' \
                'xmlns="http://www.w3.org/2000/svg">\n{}\n{}\n{}</svg>'.format(
             background_edges_contents,
@@ -183,10 +192,12 @@ def make_dimer_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dist=5,
     else:
         return None
 
+
 def make_combined_dimer_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dist=5,
                             edge_color="gray", dimer_edge_color="black",
                             front_dimer_color="red", rear_dimer_color="blue"):
     """Assuming lattice is the same front and back"""
+
     def all_grey(_, __):
         return edge_color
 
@@ -215,9 +226,9 @@ def make_combined_dimer_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8
                                                    width="0.01", front=True)
         return '<svg height="500.0pt" version="1.1" width="500.0pt" viewBox="0 0 1 1" ' \
                'xmlns="http://www.w3.org/2000/svg">\n{}\n{}\n{}\n{}</svg>'.format(
-            background_edges_contents,
-            background_dimer_contents,
-            rear_dimer_contents,
-            front_dimer_contents)
+                background_edges_contents,
+                background_dimer_contents,
+                rear_dimer_contents,
+                front_dimer_contents)
     else:
         return None
