@@ -29,6 +29,7 @@ class GraphAnalyzer:
         self.all_vars = None
         self.dimer_vertex_list = None
         self.edge_to_vertex_matrix = None
+        self.vertex_counts = None
 
     def get_all_vars(self):
         """Return sorted list of all variables in the graph"""
@@ -183,17 +184,14 @@ class GraphAnalyzer:
                     self.edge_to_vertex_matrix[i, dimer_vertex_lookup[v2]] = 1
         return self.edge_to_vertex_matrix
 
-    def get_defects(self):
-        if self.defect_matrix is None:
+    def get_dimer_vertex_counts(self):
+        if self.vertex_counts is None:
             # Get dimers per sample
             edge_lookup, edges_broken = self.get_dimer_matrix()
             vertex_list = self.get_dimer_vertex_list()
             edge_to_vertex_matrix = self.get_edge_to_vertex_matrix()
-            vertex_counts = numpy.matmul(edge_to_vertex_matrix.T, edges_broken == 1)
-            print(edges_broken, edge_to_vertex_matrix)
-
-            
-            # TODO finish this
+            self.vertex_counts = numpy.matmul(edge_to_vertex_matrix.T, edges_broken == 1)
+        return self.vertex_counts
 
 
 def get_dimer_vertices_for_edge(vara, varb, vars_per_cell=8, unit_cells_per_row=16):
@@ -207,12 +205,12 @@ def get_dimer_vertices_for_edge(vara, varb, vars_per_cell=8, unit_cells_per_row=
         cx, cy = acx, acy
         adx, ady = calculate_variable_direction(vara, vars_per_cell=vars_per_cell,
                                                 unit_cells_per_row=unit_cells_per_row)
-        bdx, bdy = calculate_variable_direction(vara, vars_per_cell=vars_per_cell,
+        bdx, bdy = calculate_variable_direction(varb, vars_per_cell=vars_per_cell,
                                                 unit_cells_per_row=unit_cells_per_row)
         unit_cycle = tuple(sorted([
             (cx, cy, front),
             (cx+adx, cy+ady, front),
-            (cx+bdx, cy+bdx, front),
+            (cx+bdx, cy+bdy, front),
             (cx+adx+bdx, cy+ady+bdy, front)
         ]))
         return (cx, cy, front), unit_cycle
