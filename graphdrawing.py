@@ -2,6 +2,7 @@ import io
 import numpy
 import graphanalysis
 import graphbuilder
+import collections
 
 
 def relative_pos_of_relative_index(relative_index):
@@ -106,7 +107,7 @@ def get_normalization(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, fro
 
 
 def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, vars_per_cell=8, dist=5,
-                        dimer_color_fn=None, width="0.01", front=True):
+                        dimer_color_fn=None, width="0.01", front=True, flippable_color_fn=None):
     if normalize is None:
         normalize = get_normalization(broken_edges, unit_cells_per_row=unit_cells_per_row, vars_per_cell=vars_per_cell,
                                       dist=dist, front=front)
@@ -114,8 +115,9 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
     if dimer_color_fn is None:
         dimer_color_fn = lambda var_a, var_b: "red"
 
-    dimer_positions = []
-    for var_a, var_b in broken_edges:
+    dimer_positions = {}
+    for edge in broken_edges:
+        var_a, var_b = edge
         if graphanalysis.is_front(var_a) != front or graphanalysis.is_front(var_b) != front:
             continue
         a_cell_x, a_cell_y, rel_var_a = graphanalysis.get_var_traits(var_a, unit_cells_per_row=unit_cells_per_row,
@@ -137,7 +139,7 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
             end_pos = middle + diff_swap
             start_pos = normalize(start_pos[0], start_pos[1])
             end_pos = normalize(end_pos[0], end_pos[1])
-            dimer_positions.append((start_pos, end_pos, (var_a, var_b)))
+            dimer_positions[edge] = (start_pos, end_pos)
 
         # If internal to a cell, then diagonal
         elif (a_cell_x, a_cell_y) == (b_cell_x, b_cell_y):
@@ -150,23 +152,54 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
             # Normalize to 0-1
             start = normalize(unit_cell_pos[0], unit_cell_pos[1])
             stop = normalize(end_pos[0], end_pos[1])
-            dimer_positions.append((start, stop, (var_a, var_b)))
+            dimer_positions[edge] = (start, stop)
         else:
             raise Exception("Not sure how to draw dimer across {}-{}".format(var_a, var_b))
 
     output = io.StringIO()
-    for (start_x, start_y), (stop_x, stop_y), (var_a, var_b) in dimer_positions:
+    for (var_a, var_b), ((start_x, start_y), (stop_x, stop_y)) in dimer_positions.items():
         title_text = "Dimer across edge between sites {}-{}".format(var_a, var_b)
         output.write(
             '<line x1="{}" y1="{}" x2="{}" y2="{}" style="stroke:{};stroke-width:{}"><title>{}</title></line>\n'.format(
                 start_x, start_y, stop_x, stop_y, dimer_color_fn(var_a, var_b), width, title_text
             ))
+
+    if flippable_color_fn:
+        # flippables surround (cell)-(cell) bonds
+        # make a lookup table to see which bonds belong to each one
+        flippable_lookups = collections.defaultdict(list)
+        for edge in broken_edges:
+            for var in edge:
+                cx, cy, rel = graphanalysis.get_var_traits(var, unit_cells_per_row=unit_cells_per_row,
+                                                           vars_per_cell=vars_per_cell)
+                dx, dy = graphanalysis.calculate_variable_direction(var, unit_cells_per_row=unit_cells_per_row,
+                                                                    vars_per_cell=vars_per_cell)
+                ox, oy = cx + dx, cy + dy
+                flippable_bond = tuple(sorted(((cx, cy), (ox, oy))))
+                flippable_lookups[flippable_bond].append(edge)
+
+        for _, edges in flippable_lookups.items():
+            if len(edges) != 2:
+                continue
+
+            # Ignore "corners"
+            (ax, ay), (bx, by) = edges
+            if ax == bx or ay == by:
+                continue
+            sa, ea = dimer_positions[edges[0]]
+            sb, eb = dimer_positions[edges[1]]
+            points = [sa, ea, sb, eb]
+            points_str = " ".join(",".join(str(p) for p in point) for point in points)
+            style_str = 'fill:{};stroke-width:0;fill-opacity:0.5'.format(flippable_color_fn(*edges))
+            comment = "For edge ({})-({})".format(str(edges[0]), str(edges[1]))
+            output.write('<polygon points="{}" style="{}">{}</polygon>\n'.format(points_str, style_str, comment))
+
     return output.getvalue()
 
 
 def make_dimer_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dist=5,
                    edge_color="gray", dimer_edge_color_fn=None,
-                   dimer_color_fn=None, front=True):
+                   dimer_color_fn=None, front=True, flippable_color_fn=None):
     def all_edge_color(_, __):
         return edge_color
 
@@ -187,7 +220,7 @@ def make_dimer_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dist=5,
                                                         dimer_color_fn=dimer_edge_color_fn, width="0.005", front=front)
         dimer_contents = make_dimer_contents(broken_edges, normalize, unit_cells_per_row=unit_cells_per_row,
                                              vars_per_cell=vars_per_cell, dist=dist, dimer_color_fn=dimer_color_fn,
-                                             front=front)
+                                             front=front, flippable_color_fn=flippable_color_fn)
         return wrap_with_svg(background_edges_contents, background_dimer_contents, dimer_contents)
     else:
         return None
@@ -197,7 +230,6 @@ def wrap_with_svg(*contents):
     content = "\n".join(contents)
     return '<svg height="500.0pt" version="1.1" width="500.0pt" viewBox="0 0 1 1" ' \
            'xmlns="http://www.w3.org/2000/svg">\n{}</svg>'.format(content)
-
 
 # def make_combined_dimer_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dist=5,
 #                             edge_color="gray", dimer_edge_color="black",

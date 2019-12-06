@@ -10,7 +10,7 @@ import numpy
 
 
 class ExperimentConfig:
-    def __init__(self, base_dir, machine_temp=14.5e-3):
+    def __init__(self, base_dir, machine_temp=14.5e-3, h=0.0):
         self.base_dir = base_dir
         self.graph = None
         self.hs = {}
@@ -19,8 +19,9 @@ class ExperimentConfig:
         self.data = None
         self.machine_temp = machine_temp
         self.effective_temp = self.machine_temp
+        self.h = h
 
-    def build_graph(self, max_x=8, max_y=16, min_x=0, min_y=0, j=1.0, hs_override=None):
+    def build_graph(self, max_x=8, max_y=16, min_x=0, min_y=0, j=1.0, h=0.0, hs_override=None):
         graph = graphbuilder.Graph(j=j)
         graph.add_cells([
             (x, y)
@@ -28,7 +29,7 @@ class ExperimentConfig:
             for y in range(min_y, max_y)
         ])
         graph.connect_all()
-        self.hs, self.graph = graph.build()
+        self.hs, self.graph = graph.build(h=h or self.h)
         self.effective_temp = self.machine_temp / j
         if hs_override is not None:
             self.hs.update(hs_override)
@@ -145,7 +146,7 @@ class ExperimentConfig:
 
             # Similarly, get the correlation plot for the dimers
             print("\tCalculating dimer correlations")
-            _, dimer_corrs = graph_analyzer.get_dimer_correlations()
+            dimer_corrs = graph_analyzer.get_dimer_correlations()
             pyplot.imshow(dimer_corrs, interpolation='nearest')
             pyplot.colorbar()
             pyplot.savefig(os.path.join(self.base_dir, "dimer_correlations.svg"))
@@ -166,6 +167,15 @@ class ExperimentConfig:
             pyplot.savefig(os.path.join(self.base_dir, "dimer_occupation_plot.svg"))
             pyplot.clf()
 
+            # Get flippable plaquettes
+            print("\tDrawing flippable states")
+            draw_flippable_states(os.path.join(self.base_dir, "dimer_flippable_plot.svg"), self.graph, sample)
+
+            print("\tCalculating flippable count")
+            flippable_squares = graph_analyzer.get_flippable_squares()
+            flippable_count = numpy.sum(numpy.mean(flippable_squares, -1))
+            flippable_stdv = numpy.sqrt(numpy.var(numpy.sum(flippable_squares, 0)))
+
             # Count the defects
             print("\tCounting defects")
             defects = graph_analyzer.get_dimer_vertex_counts() > 1
@@ -174,21 +184,27 @@ class ExperimentConfig:
             stdv_defects = numpy.sqrt(numpy.var(total_defects_per_sample, -1))
 
             defects = (average_defects, stdv_defects)
+            flippables = (flippable_count, flippable_stdv)
             print("\tDone!")
-            return ExperimentResults(self.base_dir, defects, effective_temp=self.effective_temp)
+            return ExperimentResults(self.base_dir, defects, flippables, self.effective_temp, self.h)
 
 
 class ExperimentResults:
-    def __init__(self, filepath, defects, effective_temp=None):
+    def __init__(self, filepath, defects, flippables, effective_temp, h):
         self.filepath = filepath
         self.defects = defects
+        self.flippables = flippables
         self.effective_temp = effective_temp
+        self.h = h
 
     def get_named_scalars(self):
         return {
             "defect_count": self.defects[0],
             "defect_stdv": self.defects[1],
-            "effective_temp": self.effective_temp
+            "flippable_count": self.flippables[0],
+            "flippable_stdv": self.flippables[1],
+            "effective_temp": self.effective_temp,
+            "h": self.h
         }
 
 
@@ -232,7 +248,8 @@ def draw_dimers(filename, graph, sample, front=True, color_on_orientation=True):
 
 
 def draw_occupations(filename, graph, graph_analyzer, front=True):
-    edge_lookup, dimer_matrix = graph_analyzer.get_dimer_matrix()
+    edge_lookup = graph_analyzer.get_edge_lookup()
+    dimer_matrix = graph_analyzer.get_dimer_matrix()
     average_dimers = numpy.mean(dimer_matrix == 1, -1)
     stdv_dimers = numpy.var(dimer_matrix == 1, -1)
 
@@ -251,6 +268,34 @@ def draw_occupations(filename, graph, graph_analyzer, front=True):
             w.write(svg)
 
     return average_dimers, stdv_dimers
+
+
+def draw_flippable_states(filename, graph, sample, front=True):
+    def color_on_orientation_fn(var_a, var_b):
+        dx_a, dy_a = graphanalysis.calculate_variable_direction(var_a)
+        dx_b, dy_b = graphanalysis.calculate_variable_direction(var_b)
+        # Vertical and horizontal bonds are green (and rare)
+        if dx_a == -dx_b or dy_a == -dy_b:
+            return "green"
+        if dx_a == dy_b and dy_a == dx_b:
+            return "red"
+        if dx_a == -dy_b and dy_a == -dx_b:
+            return "blue"
+        return "purple"
+
+    def flippable_color_fn(edge_a, edge_b):
+        color_a = color_on_orientation_fn(*edge_a)
+        color_b = color_on_orientation_fn(*edge_b)
+        if color_a == color_b:
+            return color_a
+        else:
+            return "gray"
+
+    svg = svg = graphdrawing.make_dimer_svg(graph, sample, front=front, dimer_color_fn=color_on_orientation_fn,
+                                            flippable_color_fn=flippable_color_fn)
+    if svg:
+        with open(filename, "w") as w:
+            w.write(svg)
 
 
 def run_experiment_sweep(base_directory, experiment_gen, plot_functions=None):
@@ -277,32 +322,59 @@ def run_experiment_sweep(base_directory, experiment_gen, plot_functions=None):
 
 
 if __name__ == "__main__":
-    experiment_name = "data/j_sweep"
+    experiment_name = "data/h_sweep"
 
     def experiment_gen(base_dir):
         n = 10
         for i in range(1, n):
             print("Running experiment {}".format(i))
+            h = float(i) / n
             experiment_dir = os.path.join(base_dir, "experiment_{}".format(i))
             if not os.path.exists(experiment_dir):
                 os.makedirs(experiment_dir)
             print("\tUsing directory: {}".format(experiment_dir))
-            config = ExperimentConfig(experiment_dir)
-            config.num_reads = 10000
+            config = ExperimentConfig(experiment_dir, h=h)
+            config.num_reads = 1000
             config.auto_scale = False
-            config.build_graph(j=float(i)/n)
+            config.build_graph()
             yield config
 
     def defect_plot(scalars):
         effective_temperatures = scalars['effective_temp']
         defects = scalars['defect_count']
         defects_stdv = scalars['defect_stdv']
+        hs = scalars['h']
+
         pyplot.errorbar(effective_temperatures, defects, yerr=defects_stdv)
         pyplot.xlabel('Effective temperature (K)')
         pyplot.ylabel('Number of defects')
-
         pyplot.savefig(os.path.join(experiment_name, 'defects_vs_temp.svg'))
         pyplot.clf()
 
+        pyplot.errorbar(hs, defects, yerr=defects_stdv)
+        pyplot.xlabel('H')
+        pyplot.ylabel('Number of defects')
+        pyplot.savefig(os.path.join(experiment_name, 'defects_vs_hs.svg'))
+        pyplot.clf()
+
+
+    def flippable_plot(scalars):
+        effective_temperatures = scalars['effective_temp']
+        flippable_count = scalars['flippable_count']
+        flippable_stdv = scalars['flippable_stdv']
+        hs = scalars['h']
+
+        pyplot.errorbar(effective_temperatures, flippable_count, yerr=flippable_stdv)
+        pyplot.xlabel('Effective temperature (K)')
+        pyplot.ylabel('Number of flippable plaquettes')
+        pyplot.savefig(os.path.join(experiment_name, 'flippable_vs_temp.svg'))
+        pyplot.clf()
+
+        pyplot.errorbar(hs, flippable_count, yerr=flippable_stdv)
+        pyplot.xlabel('H')
+        pyplot.ylabel('Number of flippable plaquettes')
+        pyplot.savefig(os.path.join(experiment_name, 'flippable_vs_hs.svg'))
+        pyplot.clf()
+
     run_experiment_sweep(experiment_name, experiment_gen(experiment_name),
-                         plot_functions=[defect_plot])
+                         plot_functions=[defect_plot, flippable_plot])

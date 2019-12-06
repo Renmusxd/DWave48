@@ -30,6 +30,8 @@ class GraphAnalyzer:
         self.dimer_vertex_list = None
         self.edge_to_vertex_matrix = None
         self.vertex_counts = None
+        self.dimer_to_flippable_matrix = None
+        self.flippable_squares = None
 
     def get_all_vars(self):
         """Return sorted list of all variables in the graph"""
@@ -109,9 +111,14 @@ class GraphAnalyzer:
             self.variable_distance_stdv = distance_stdv
         return var_corr, self.variable_distance_correlations, self.variable_distance_stdv, all_vars
 
+    def get_edge_lookup(self):
+        if self.edge_lookup is None:
+            self.edge_lookup = {edge: i for i, edge in enumerate(sorted(self.edges))}
+        return self.edge_lookup
+
     def get_dimer_matrix(self):
         """Get matrix of dimers for each sample."""
-        if self.dimer_matrix is None or self.edge_lookup is None:
+        if self.dimer_matrix is None:
             # Get flat versions of variables, values, and make lookup tables.
             var_map, var_mat = self.get_flat_samples()
             var_lookup = {v: k for k, v in enumerate(var_map)}
@@ -129,22 +136,21 @@ class GraphAnalyzer:
             # If edge is positive, and product is negative (unequal), then satisfied.
             # So satisfied edges are negative, broken are positive
             self.dimer_matrix = spin_product * edge_signs
-            self.edge_lookup = {edge: i for i, edge in enumerate(sorted_edges)}
-        return self.edge_lookup, self.dimer_matrix
+        return self.dimer_matrix
 
     def get_dimer_correlations(self):
         """
         Get the correlation of broken bonds (dimers).
         :param edges: map {(int, int): float} (edges and their couplings)
         :param samples: list of maps {int: float} for each sample
-        :return: map from edge to index, and DxD matrix of correlations.
+        :return: DxD matrix of correlations.
         """
         # Get dimers per sample
-        edge_lookup, edges_broken = self.get_dimer_matrix()
+        edges_broken = self.get_dimer_matrix()
         if self.dimer_correlation is None:
             # Now get correlations
             self.dimer_correlation = calculate_correlation_matrix(edges_broken)
-        return edge_lookup, self.dimer_correlation
+        return self.dimer_correlation
 
     def get_dimer_vertex_list(self):
         if self.dimer_vertex_list is None:
@@ -170,7 +176,7 @@ class GraphAnalyzer:
 
     def get_edge_to_vertex_matrix(self):
         if self.edge_to_vertex_matrix is None:
-            edge_lookup, _ = self.get_dimer_matrix()
+            edge_lookup = self.get_edge_lookup()
             dimer_vertex_list = self.get_dimer_vertex_list()
             dimer_vertex_lookup = {k: i for i, k in enumerate(dimer_vertex_list)}
             self.edge_to_vertex_matrix = numpy.zeros((len(self.edges), len(dimer_vertex_list)), dtype=numpy.int8)
@@ -187,11 +193,63 @@ class GraphAnalyzer:
     def get_dimer_vertex_counts(self):
         if self.vertex_counts is None:
             # Get dimers per sample
-            edge_lookup, edges_broken = self.get_dimer_matrix()
-            vertex_list = self.get_dimer_vertex_list()
+            edges_broken = self.get_dimer_matrix()
             edge_to_vertex_matrix = self.get_edge_to_vertex_matrix()
             self.vertex_counts = numpy.matmul(edge_to_vertex_matrix.T, edges_broken == 1)
         return self.vertex_counts
+
+    def get_flippable_squares_list(self):
+        if self.flippable_squares is None:
+            # Each cell-cell connection gives a flippable square.
+            # Label each by (cell)-(cell)
+            unit_cells = set(self.get_unit_cells())
+            connections = []
+            for (cx, cy, front) in unit_cells:
+                # Check cx+1 and cy+1, the [cu-1] will be checked by the other ones
+                oa = (cx + 1, cy, front)
+                ob = (cx, cy + 1, front)
+                for other in [oa, ob]:
+                    if other in unit_cells:
+                        connections.append(((cx, cy, front), other))
+            self.flippable_squares = list(sorted(connections))
+        return self.flippable_squares
+
+    def get_dimer_to_flippable_squares_matrix(self):
+        if self.dimer_to_flippable_matrix is None:
+            flippable_squares = self.get_flippable_squares_list()
+            connection_indices = {k: i for i, k in enumerate(flippable_squares)}
+            self.dimer_to_flippable_matrix = numpy.zeros((len(self.edges), len(flippable_squares)),
+                                                         dtype=numpy.int8)
+            for i, (vara, varb) in enumerate(sorted(self.edges)):
+                ax, ay, arel = get_var_traits(vara, vars_per_cell=self.vars_per_cell,
+                                              unit_cells_per_row=self.unit_cells_per_row)
+                bx, by, brel = get_var_traits(varb, vars_per_cell=self.vars_per_cell,
+                                              unit_cells_per_row=self.unit_cells_per_row)
+                # Only consider two variables in same cell.
+                if ax != bx or ay != by:
+                    continue
+                cx, cy = ax, ay
+                # TODO fix this whenever periodic is really working.
+                front = is_front(vara, vars_per_cell=self.vars_per_cell)
+
+                dax, day = calculate_variable_direction(vara, vars_per_cell=self.vars_per_cell,
+                                                        unit_cells_per_row=self.unit_cells_per_row)
+                dbx, dby = calculate_variable_direction(varb, vars_per_cell=self.vars_per_cell,
+                                                        unit_cells_per_row=self.unit_cells_per_row)
+                for dx, dy in [(dax, day), (dbx, dby)]:
+                    ox, oy = cx+dx, cy+dy
+                    connection = tuple(sorted(((cx, cy, front), (ox, oy, front))))
+                    if connection in connection_indices:
+                        j = connection_indices[connection]
+                        self.dimer_to_flippable_matrix[i, j] = 1
+        return self.dimer_to_flippable_matrix
+
+    def get_flippable_squares(self):
+        dimers = self.get_dimer_matrix()
+        dimer_to_flippable = self.get_dimer_to_flippable_squares_matrix()
+        num_dimers_adjacent_to_flippables = numpy.matmul(dimer_to_flippable.T, dimers==1)
+        flippable_states = num_dimers_adjacent_to_flippables == 2
+        return flippable_states
 
 
 def get_dimer_vertices_for_edge(vara, varb, vars_per_cell=8, unit_cells_per_row=16):
