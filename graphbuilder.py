@@ -337,7 +337,6 @@ def get_dimer_vertices_for_edge(vara, varb, vars_per_cell=8, unit_cells_per_row=
         return unit_cycle_a, unit_cycle_b
 
 
-
 def variable_distances(edges):
     """
     Floyd's algorithm for all pairs shortest paths.
@@ -360,7 +359,6 @@ def variable_distances(edges):
                 if dist_mat[i, k] + dist_mat[k, j] < dist_mat[i, j]:
                     dist_mat[i, j] = dist_mat[i, k] + dist_mat[k, j]
     return dist_mat, all_vars
-
 
 
 def make_boundary_cell(boundary_cell, connected_cell, v_front, v_rear, bond_j, clone_j, vars_per_cell=8):
@@ -468,4 +466,4 @@ def energy_of_bonds(bonds, config):
 def energy_states(bonds):
     all_vars = list(sorted(set(x for k in bonds for x in k)))
     for var_config in make_configs(all_vars):
-        yield (var_config, energy_of_bonds(bonds, var_config))
+        yield var_config, energy_of_bonds(bonds, var_config)

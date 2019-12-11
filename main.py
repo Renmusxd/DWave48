@@ -238,20 +238,20 @@ def make_run_dir(data_dir, run_format="run_{}"):
     return pathname
 
 
+def color_on_orientation_fn(var_a, var_b):
+    dx_a, dy_a = graphbuilder.calculate_variable_direction(var_a)
+    dx_b, dy_b = graphbuilder.calculate_variable_direction(var_b)
+    # Vertical and horizontal bonds are green (and rare)
+    if dx_a == -dx_b or dy_a == -dy_b:
+        return "green"
+    if dx_a == dy_b and dy_a == dx_b:
+        return "red"
+    if dx_a == -dy_b and dy_a == -dx_b:
+        return "blue"
+    return "purple"
+
+
 def draw_dimers(filename, graph, sample, front=True, color_on_orientation=True):
-
-    def color_on_orientation_fn(var_a, var_b):
-        dx_a, dy_a = graphbuilder.calculate_variable_direction(var_a)
-        dx_b, dy_b = graphbuilder.calculate_variable_direction(var_b)
-        # Vertical and horizontal bonds are green (and rare)
-        if dx_a == -dx_b or dy_a == -dy_b:
-            return "green"
-        if dx_a == dy_b and dy_a == dx_b:
-            return "red"
-        if dx_a == -dy_b and dy_a == -dx_b:
-            return "blue"
-        return "purple"
-
     if not color_on_orientation:
         # Basic color scheme
         svg = graphdrawing.make_dimer_svg(graph, sample, front=front)
@@ -289,17 +289,6 @@ def draw_occupations(filename, edges, graph_analyzer, front=True):
 
 
 def draw_flippable_states(filename, graph, sample, front=True):
-    def color_on_orientation_fn(var_a, var_b):
-        dx_a, dy_a = graphbuilder.calculate_variable_direction(var_a)
-        dx_b, dy_b = graphbuilder.calculate_variable_direction(var_b)
-        # Vertical and horizontal bonds are green (and rare)
-        if dx_a == -dx_b or dy_a == -dy_b:
-            return "green"
-        if dx_a == dy_b and dy_a == dx_b:
-            return "red"
-        if dx_a == -dy_b and dy_a == -dx_b:
-            return "blue"
-        return "purple"
 
     def flippable_color_fn(edge_a, edge_b):
         color_a = color_on_orientation_fn(*edge_a)
@@ -310,7 +299,7 @@ def draw_flippable_states(filename, graph, sample, front=True):
             return "gray"
 
     svg = graphdrawing.make_dimer_svg(graph, sample, front=front, dimer_color_fn=color_on_orientation_fn,
-                                            flippable_color_fn=flippable_color_fn)
+                                      flippable_color_fn=flippable_color_fn)
     if svg:
         with open(filename, "w") as w:
             w.write(svg)
