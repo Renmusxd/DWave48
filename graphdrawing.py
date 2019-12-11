@@ -145,9 +145,10 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
         elif (a_cell_x, a_cell_y) == (b_cell_x, b_cell_y):
             unit_cell_pos = numpy.asarray(position_of_unit_cell(a_cell_x, a_cell_y, dist=dist))
 
-            # Dimer goes from unit_cell_pos, through the middle of var_a_pos, var_b_pos, then forward sqrt(2*dist)
+            # Dimer goes from unit_cell_pos, through the middle of var_a_pos, var_b_pos, then forward sqrt(dist**2 / 2)
             direction = middle - unit_cell_pos
-            direction = direction / numpy.linalg.norm(direction) * numpy.sqrt(2.0 * dist)
+            direction = direction / numpy.linalg.norm(direction)
+            direction = direction * dist / numpy.sqrt(2)
             end_pos = direction + unit_cell_pos
             # Normalize to 0-1
             start = normalize(unit_cell_pos[0], unit_cell_pos[1])
@@ -191,8 +192,9 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
             points = [sa, ea, sb, eb]
             points_str = " ".join(",".join(str(p) for p in point) for point in points)
             style_str = 'fill:{};stroke-width:0;fill-opacity:0.5'.format(flippable_color_fn(*edges))
-            comment = "For edge ({})-({})".format(str(edges[0]), str(edges[1]))
-            output.write('<polygon points="{}" style="{}">{}</polygon>\n'.format(points_str, style_str, comment))
+            comment = "Flippable edges ({})-({})".format(str(edges[0]), str(edges[1]))
+            output.write('<polygon points="{}" style="{}"><title>{}</title></polygon>\n'.format(points_str, style_str,
+                                                                                                comment))
 
     return output.getvalue()
 

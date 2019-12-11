@@ -122,35 +122,35 @@ class ExperimentConfig:
 
             # Now plot the correlation matrix for the variables, and the correlation as a function of distance.
 
-            print("\tCalculating variable correlations")
-            var_corr, distance_corr, distance_stdv, all_vars = graph_analyzer.calculate_correlation_function()
-            distance_corr = numpy.nan_to_num(distance_corr)
-            distance_stdv = numpy.nan_to_num(distance_stdv)
-            pyplot.imshow(var_corr, interpolation='nearest')
-            pyplot.colorbar()
-            pyplot.savefig(os.path.join(self.base_dir, "variable_correlations.svg"))
-            pyplot.clf()
-
-            # Now the distance part, with error bars.
-            print("\tCalculating distance correlations")
-            average_corrs = numpy.mean(distance_corr, 0)
-            stdv_corrs = numpy.sqrt(numpy.var(distance_corr, 0))
-            xs = numpy.arange(average_corrs.shape[0])
-            pyplot.errorbar(xs, average_corrs, yerr=stdv_corrs, label="Average")
-            pyplot.legend()
-            pyplot.grid()
-            pyplot.xlabel("Distance (in # edges)")
-            pyplot.ylabel("Correlation")
-            pyplot.savefig(os.path.join(self.base_dir, "correlation_distance.svg"))
-            pyplot.clf()
-
-            # Similarly, get the correlation plot for the dimers
-            print("\tCalculating dimer correlations")
-            dimer_corrs = graph_analyzer.get_dimer_correlations()
-            pyplot.imshow(dimer_corrs, interpolation='nearest')
-            pyplot.colorbar()
-            pyplot.savefig(os.path.join(self.base_dir, "dimer_correlations.svg"))
-            pyplot.clf()
+            # print("\tCalculating variable correlations")
+            # var_corr, distance_corr, distance_stdv, all_vars = graph_analyzer.calculate_correlation_function()
+            # distance_corr = numpy.nan_to_num(distance_corr)
+            # distance_stdv = numpy.nan_to_num(distance_stdv)
+            # pyplot.imshow(var_corr, interpolation='nearest')
+            # pyplot.colorbar()
+            # pyplot.savefig(os.path.join(self.base_dir, "variable_correlations.svg"))
+            # pyplot.clf()
+            #
+            # # Now the distance part, with error bars.
+            # print("\tCalculating distance correlations")
+            # average_corrs = numpy.mean(distance_corr, 0)
+            # stdv_corrs = numpy.sqrt(numpy.var(distance_corr, 0))
+            # xs = numpy.arange(average_corrs.shape[0])
+            # pyplot.errorbar(xs, average_corrs, yerr=stdv_corrs, label="Average")
+            # pyplot.legend()
+            # pyplot.grid()
+            # pyplot.xlabel("Distance (in # edges)")
+            # pyplot.ylabel("Correlation")
+            # pyplot.savefig(os.path.join(self.base_dir, "correlation_distance.svg"))
+            # pyplot.clf()
+            #
+            # # Similarly, get the correlation plot for the dimers
+            # print("\tCalculating dimer correlations")
+            # dimer_corrs = graph_analyzer.get_dimer_correlations()
+            # pyplot.imshow(dimer_corrs, interpolation='nearest')
+            # pyplot.colorbar()
+            # pyplot.savefig(os.path.join(self.base_dir, "dimer_correlations.svg"))
+            # pyplot.clf()
 
             # Get the average dimer occupations
             print("\tDrawing dimer occupations")
@@ -165,6 +165,12 @@ class ExperimentConfig:
             pyplot.plot(xs, average_dimers + stdv_dimers, 'r--')
             pyplot.plot(xs, average_dimers - stdv_dimers, 'r--')
             pyplot.savefig(os.path.join(self.base_dir, "dimer_occupation_plot.svg"))
+            pyplot.clf()
+
+            pyplot.hist(average_dimers)
+            pyplot.xlabel("Dimer occupation frequencies")
+            pyplot.ylabel("Counts")
+            pyplot.savefig(os.path.join(self.base_dir, "dimer_occupation_hist.svg"))
             pyplot.clf()
 
             # Get flippable plaquettes
@@ -326,7 +332,7 @@ if __name__ == "__main__":
 
     def experiment_gen(base_dir):
         n = 10
-        for i in range(1, n):
+        for i in range(0, n):
             print("Running experiment {}".format(i))
             h = float(i) / n
             experiment_dir = os.path.join(base_dir, "experiment_{}".format(i))
