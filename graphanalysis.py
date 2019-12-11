@@ -1,62 +1,41 @@
 import numpy
 import graphbuilder
+import collections
 
 
 class GraphAnalyzer:
-    def __init__(self, edges, samples, vars_per_cell=8, unit_cells_per_row=16):
-        # I don't want to handle rear yet
-        if not all(is_front(v) for edge in edges for v in edge):
-            raise NotImplemented("Does not yet handle rear.")
-
-        self.edges = edges
+    """Things about the graph using data from the samples."""
+    def __init__(self, graph, samples):
+        self.graph = graph
         self.samples = samples
-        self.vars_per_cell = vars_per_cell
-        self.unit_cells_per_row = unit_cells_per_row
+
         # Memoization for later
+        self.sorted_edges = None
+        # From get_flat_samples
         self.var_map = None
         self.var_mat = None
-        self.vertex_distances = None
-        self.distance_lookup = None
+
+        # from get_correlation_matrix
         self.variable_correlations = None
+
+        # from calculate_correlation_function
         self.variable_distance_correlations = None
         self.variable_distance_stdv = None
+
+        # from get_dimer_matrix
         self.dimer_matrix = None
-        self.edge_lookup = None
+
+        # from get_dimer_correlations
         self.dimer_correlation = None
-        self.defect_matrix = None
-        self.unit_cells = None
-        self.unit_cell_bounding_box = None
-        self.all_vars = None
-        self.dimer_vertex_list = None
-        self.edge_to_vertex_matrix = None
+
+        # from get_dimer_vertex_counts
         self.vertex_counts = None
         self.dimer_to_flippable_matrix = None
         self.flippable_squares = None
-
-    def get_all_vars(self):
-        """Return sorted list of all variables in the graph"""
-        if self.all_vars is None:
-            self.all_vars = list(sorted(set(v for edge in self.edges for v in edge)))
-        return self.all_vars
-
-    def get_unit_cells(self):
-        """Return sorted list of all unit cells in graph. (x, y, is_front)"""
-        if self.unit_cells is None:
-            all_vars = self.get_all_vars()
-            var_traits = (get_var_traits(var_indx, self.vars_per_cell, self.unit_cells_per_row)
-                          for var_indx in all_vars)
-            self.unit_cells = list(sorted(set((cx, cy, is_front(indx, self.vars_per_cell))
-                                              for cx, cy, indx in var_traits)))
-
-            minx, miny = self.unit_cells_per_row, self.unit_cells_per_row
-            maxx, maxy = 0, 0
-            for cx, cy, _ in self.unit_cells:
-                minx = min(minx, cx)
-                miny = min(miny, cy)
-                maxx = max(maxx, cx)
-                maxy = max(maxy, cy)
-                self.unit_cell_bounding_box = ((minx, miny), (maxx, maxy))
-        return self.unit_cells
+        self.dimer_distance_mat = None
+        self.all_dimer_pairs = None
+        self.dimer_distance_correlations = None
+        self.dimer_distance_stdv = None
 
     def get_flat_samples(self):
         if self.var_map is None or self.var_mat is None:
@@ -64,13 +43,6 @@ class GraphAnalyzer:
             self.var_map = var_map
             self.var_mat = var_mat
         return self.var_map, self.var_mat
-
-    def get_vertex_distances(self):
-        if self.vertex_distances is None or self.distance_lookup:
-            distances, all_vars = variable_distances(self.edges)
-            self.vertex_distances = distances
-            self.distance_lookup = all_vars
-        return self.vertex_distances, self.distance_lookup
 
     def get_correlation_matrix(self):
         if self.variable_correlations is None:
@@ -84,37 +56,31 @@ class GraphAnalyzer:
         :return: NxN matrix of variable correlations, NxD matrix of variable distance correlations, and NxD matrix of
         standard deviations on the distance correlations, array of N ints which maps index to variable index.
         """
-        distances, all_vars = self.get_vertex_distances()
         var_corr = self.get_correlation_matrix()
         if self.variable_distance_correlations is None or self.variable_distance_stdv is None:
             # max distance (protected from infinity)
-            max_dist = min(numpy.max(distances), len(self.edges))
-            distance_corrs = numpy.zeros((len(all_vars), max_dist + 1))
-            distance_stdv = numpy.zeros((len(all_vars), max_dist + 1))
+            max_dist = min(numpy.max(self.graph.vertex_distances), len(self.graph.edges))
+            distance_corrs = numpy.zeros((len(self.graph.all_vars), max_dist + 1))
+            distance_stdv = numpy.zeros((len(self.graph.all_vars), max_dist + 1))
             # Need to find a numpy-ish way to do this stuff.
-            for i, v in enumerate(all_vars):
+            for i, v in enumerate(self.graph.all_vars):
                 totals = numpy.zeros(max_dist + 1)
-                for j in range(len(all_vars)):
+                for j in range(len(self.graph.all_vars)):
                     corr = var_corr[i, j]
-                    d = distances[i, j]
+                    d = self.graph.vertex_distances[i, j]
                     if d <= max_dist:
                         totals[d] += 1
                         distance_corrs[i, d] += corr
                 distance_corrs[i, :] = distance_corrs[i, :] / totals
-                for j in range(len(all_vars)):
+                for j in range(len(self.graph.all_vars)):
                     corr = var_corr[i, j]
-                    d = distances[i, j]
+                    d = self.graph.vertex_distances[i, j]
                     if d <= max_dist:
                         distance_stdv[i, d] += (corr - distance_corrs[i, d]) ** 2
                 distance_stdv[i, :] = numpy.sqrt(distance_stdv[i, :] / totals)
             self.variable_distance_correlations = distance_corrs
             self.variable_distance_stdv = distance_stdv
-        return var_corr, self.variable_distance_correlations, self.variable_distance_stdv, all_vars
-
-    def get_edge_lookup(self):
-        if self.edge_lookup is None:
-            self.edge_lookup = {edge: i for i, edge in enumerate(sorted(self.edges))}
-        return self.edge_lookup
+        return var_corr, self.variable_distance_correlations, self.variable_distance_stdv, self.graph.all_vars
 
     def get_dimer_matrix(self):
         """Get matrix of dimers for each sample."""
@@ -122,9 +88,8 @@ class GraphAnalyzer:
             # Get flat versions of variables, values, and make lookup tables.
             var_map, var_mat = self.get_flat_samples()
             var_lookup = {v: k for k, v in enumerate(var_map)}
-            sorted_edges = list(sorted(self.edges))
-            edge_list = numpy.asarray([(var_lookup[a], var_lookup[b]) for a, b in sorted_edges])
-            edge_values = numpy.asarray([self.edges[edge] for edge in sorted_edges])
+            edge_list = numpy.asarray([(var_lookup[a], var_lookup[b]) for a, b in self.graph.sorted_edges])
+            edge_values = numpy.asarray([self.graph.edges[edge] for edge in self.graph.sorted_edges])
             a_values = var_mat[edge_list[:, 0], :]
             b_values = var_mat[edge_list[:, 1], :]
 
@@ -152,49 +117,45 @@ class GraphAnalyzer:
             self.dimer_correlation = calculate_correlation_matrix(edges_broken)
         return self.dimer_correlation
 
-    def get_dimer_vertex_list(self):
-        if self.dimer_vertex_list is None:
-            # TODO update this to deal with front/rear correctly.
-            # First all unit cells
-            unit_cells = set(self.get_unit_cells())
-            # Then all the squares of unit cells
-            unit_cycles = set()
-            for (cx, cy, front) in unit_cells:
-                # Add the bottom-right one for each cell
-                sides = [
-                    (cx, cy, front),
-                    (cx + 1, cy, front),
-                    (cx + 1, cy + 1, front),
-                    (cx, cy + 1, front)
-                ]
-                if all(side in unit_cells for side in sides[1:]):
-                    unit_cycles.add(tuple(sorted(tuple(sides))))
-            self.dimer_vertex_list = []
-            self.dimer_vertex_list.extend(sorted(unit_cells))
-            self.dimer_vertex_list.extend(sorted(unit_cycles))
-        return self.dimer_vertex_list
-
-    def get_edge_to_vertex_matrix(self):
-        if self.edge_to_vertex_matrix is None:
-            edge_lookup = self.get_edge_lookup()
-            dimer_vertex_list = self.get_dimer_vertex_list()
-            dimer_vertex_lookup = {k: i for i, k in enumerate(dimer_vertex_list)}
-            self.edge_to_vertex_matrix = numpy.zeros((len(self.edges), len(dimer_vertex_list)), dtype=numpy.int8)
-            for (va, vb) in sorted(self.edges):
-                v1, v2 = get_dimer_vertices_for_edge(va, vb, vars_per_cell=self.vars_per_cell,
-                                                     unit_cells_per_row=self.unit_cells_per_row)
-                i = edge_lookup[(va, vb)]
-                if v1 in dimer_vertex_lookup:
-                    self.edge_to_vertex_matrix[i, dimer_vertex_lookup[v1]] = 1
-                if v2 in dimer_vertex_lookup:
-                    self.edge_to_vertex_matrix[i, dimer_vertex_lookup[v2]] = 1
-        return self.edge_to_vertex_matrix
+    def calculate_dimer_correlation_function(self):
+        """
+        Calculate correlations as a function of distance for each dimer.
+        :return: NxN matrix of dimer correlations, NxD matrix of dimer distance correlations, and NxD matrix of
+        standard deviations on the distance correlations, array of N ints which maps index to variable index.
+        """
+        # all_dimer_pairs maps the index in dimer_distances to the index into self.sorted_edges
+        dimer_corr = self.get_dimer_correlations()
+        if self.dimer_distance_correlations is None or self.dimer_distance_stdv is None:
+            # max distance (protected from infinity)
+            max_dist = min(numpy.max(self.graph.dimer_distance_mat), self.graph.dimer_distance_mat.shape[0])
+            # Matrices to store values
+            distance_corrs = numpy.zeros((len(self.graph.all_dimer_pairs), max_dist + 1))
+            distance_stdv = numpy.zeros((len(self.graph.all_dimer_pairs), max_dist + 1))
+            # Need to find a numpy-ish way to do this stuff.
+            for i, v in enumerate(self.graph.all_dimer_pairs):
+                totals = numpy.zeros(max_dist + 1)
+                for j in range(len(self.graph.all_dimer_pairs)):
+                    corr = dimer_corr[i, j]
+                    d = self.graph.dimer_distance_mat[i, j]
+                    if d <= max_dist:
+                        totals[d] += 1
+                        distance_corrs[i, d] += corr
+                distance_corrs[i, :] = distance_corrs[i, :] / totals
+                for j in range(len(self.graph.all_dimer_pairs)):
+                    corr = dimer_corr[i, j]
+                    d = self.graph.dimer_distance_mat[i, j]
+                    if d <= max_dist:
+                        distance_stdv[i, d] += (corr - distance_corrs[i, d]) ** 2
+                distance_stdv[i, :] = numpy.sqrt(distance_stdv[i, :] / totals)
+            self.dimer_distance_correlations = distance_corrs
+            self.dimer_distance_stdv = distance_stdv
+        return dimer_corr, self.dimer_distance_correlations, self.dimer_distance_stdv, self.graph.all_dimer_pairs
 
     def get_dimer_vertex_counts(self):
         if self.vertex_counts is None:
             # Get dimers per sample
             edges_broken = self.get_dimer_matrix()
-            edge_to_vertex_matrix = self.get_edge_to_vertex_matrix()
+            edge_to_vertex_matrix = self.graph.edge_to_vertex_matrix
             self.vertex_counts = numpy.matmul(edge_to_vertex_matrix.T, edges_broken == 1)
         return self.vertex_counts
 
@@ -202,7 +163,7 @@ class GraphAnalyzer:
         if self.flippable_squares is None:
             # Each cell-cell connection gives a flippable square.
             # Label each by (cell)-(cell)
-            unit_cells = set(self.get_unit_cells())
+            unit_cells = set(self.graph.unit_cells)
             connections = []
             for (cx, cy, front) in unit_cells:
                 # Check cx+1 and cy+1, the [cu-1] will be checked by the other ones
@@ -218,24 +179,24 @@ class GraphAnalyzer:
         if self.dimer_to_flippable_matrix is None:
             flippable_squares = self.get_flippable_squares_list()
             connection_indices = {k: i for i, k in enumerate(flippable_squares)}
-            self.dimer_to_flippable_matrix = numpy.zeros((len(self.edges), len(flippable_squares)),
+            self.dimer_to_flippable_matrix = numpy.zeros((len(self.graph.edges), len(flippable_squares)),
                                                          dtype=numpy.int8)
-            for i, (vara, varb) in enumerate(sorted(self.edges)):
-                ax, ay, arel = get_var_traits(vara, vars_per_cell=self.vars_per_cell,
-                                              unit_cells_per_row=self.unit_cells_per_row)
-                bx, by, brel = get_var_traits(varb, vars_per_cell=self.vars_per_cell,
-                                              unit_cells_per_row=self.unit_cells_per_row)
+            for i, (vara, varb) in enumerate(self.graph.sorted_edges):
+                ax, ay, arel = graphbuilder.get_var_traits(vara, vars_per_cell=self.graph.vars_per_cell,
+                                                           unit_cells_per_row=self.graph.unit_cells_per_row)
+                bx, by, brel = graphbuilder.get_var_traits(varb, vars_per_cell=self.graph.vars_per_cell,
+                                                           unit_cells_per_row=self.graph.unit_cells_per_row)
                 # Only consider two variables in same cell.
                 if ax != bx or ay != by:
                     continue
                 cx, cy = ax, ay
                 # TODO fix this whenever periodic is really working.
-                front = is_front(vara, vars_per_cell=self.vars_per_cell)
+                front = graphbuilder.is_front(vara, vars_per_cell=self.graph.vars_per_cell)
 
-                dax, day = calculate_variable_direction(vara, vars_per_cell=self.vars_per_cell,
-                                                        unit_cells_per_row=self.unit_cells_per_row)
-                dbx, dby = calculate_variable_direction(varb, vars_per_cell=self.vars_per_cell,
-                                                        unit_cells_per_row=self.unit_cells_per_row)
+                dax, day = graphbuilder.calculate_variable_direction(vara, vars_per_cell=self.graph.vars_per_cell,
+                                                                     unit_cells_per_row=self.graph.unit_cells_per_row)
+                dbx, dby = graphbuilder.calculate_variable_direction(varb, vars_per_cell=self.graph.vars_per_cell,
+                                                                     unit_cells_per_row=self.graph.unit_cells_per_row)
                 for dx, dy in [(dax, day), (dbx, dby)]:
                     ox, oy = cx+dx, cy+dy
                     connection = tuple(sorted(((cx, cy, front), (ox, oy, front))))
@@ -250,46 +211,6 @@ class GraphAnalyzer:
         num_dimers_adjacent_to_flippables = numpy.matmul(dimer_to_flippable.T, dimers==1)
         flippable_states = num_dimers_adjacent_to_flippables == 2
         return flippable_states
-
-
-def get_dimer_vertices_for_edge(vara, varb, vars_per_cell=8, unit_cells_per_row=16):
-    """Returns the two dimer vertices attached by this dimer."""
-    acx, acy, rela = get_var_traits(vara, vars_per_cell=vars_per_cell, unit_cells_per_row=unit_cells_per_row)
-    bcx, bcy, relb = get_var_traits(varb, vars_per_cell=vars_per_cell, unit_cells_per_row=unit_cells_per_row)
-    front = is_front(vara)
-    if not front:
-        raise NotImplemented("Not implemented on rear.")
-    if acx == bcx and acy == bcy:
-        cx, cy = acx, acy
-        adx, ady = calculate_variable_direction(vara, vars_per_cell=vars_per_cell,
-                                                unit_cells_per_row=unit_cells_per_row)
-        bdx, bdy = calculate_variable_direction(varb, vars_per_cell=vars_per_cell,
-                                                unit_cells_per_row=unit_cells_per_row)
-        unit_cycle = tuple(sorted([
-            (cx, cy, front),
-            (cx+adx, cy+ady, front),
-            (cx+bdx, cy+bdy, front),
-            (cx+adx+bdx, cy+ady+bdy, front)
-        ]))
-        return (cx, cy, front), unit_cycle
-    else:
-        # One should be zero, one should be +-1
-        dx = bcx - acx
-        dy = bcy - acy
-        # Since the difference is along one axis, add and subtract the flipped to move along other axis.
-        unit_cycle_a = tuple(sorted([
-            (acx, acy, front),
-            (bcx, bcy, front),
-            (acx+dy, acy+dx, front),
-            (bcx+dy, bcy+dx, front),
-        ]))
-        unit_cycle_b = tuple(sorted([
-            (acx, acy, front),
-            (bcx, bcy, front),
-            (acx-dy, acy-dx, front),
-            (bcx-dy, bcy-dx, front),
-        ]))
-        return unit_cycle_a, unit_cycle_b
 
 
 def flatten_dicts(samples):
@@ -322,65 +243,6 @@ def calculate_correlation_matrix(variable_values):
     norm_mat = numpy.outer(v_norms, v_norms)
     norm_m = m / norm_mat
     return norm_m
-
-
-def get_var_traits(index, vars_per_cell=8, unit_cells_per_row=16):
-    """
-    Get the relative unit cell indices and variable index from the absolute one
-    :param index: absolute index
-    :return: (unit_x, unit_y, relative_var)
-    """
-    var_relative = index % vars_per_cell
-    unit_cell_index = index // vars_per_cell
-    unit_cell_x = unit_cell_index % unit_cells_per_row
-    unit_cell_y = unit_cell_index // unit_cells_per_row
-    return unit_cell_x, unit_cell_y, var_relative
-
-
-def is_front(index, vars_per_cell=8):
-    """Returns if the absolute index is a front or rear unit cell."""
-    var_relative = index % vars_per_cell
-    return var_relative in [0, 1, 4, 5]
-
-
-def variable_distances(edges):
-    """
-    Floyd's algorithm for all pairs shortest paths.
-    :param edges: list of edges (var_a, var_b)
-    :return: matrix of distances [var_a, var_b] and array of index to variable number
-    """
-    all_vars = numpy.asarray(list(sorted(set(v for vars in edges for v in vars))))
-    var_lookup = {k: i for i, k in enumerate(all_vars)}
-    n_vars = len(all_vars)
-    # Maximum size to which we can safely multiply by 2.
-    dist_mat = (numpy.zeros((n_vars, n_vars), dtype=numpy.uint32) - 1) // 2
-    numpy.fill_diagonal(dist_mat, 0)
-    for va, vb in edges:
-        ia, ib = var_lookup[va], var_lookup[vb]
-        dist_mat[ia, ib] = 1
-        dist_mat[ib, ia] = 1
-    for k in range(n_vars):
-        for i in range(n_vars):
-            for j in range(n_vars):
-                if dist_mat[i, k] + dist_mat[k, j] < dist_mat[i, j]:
-                    dist_mat[i, j] = dist_mat[i, k] + dist_mat[k, j]
-    return dist_mat, all_vars
-
-
-def is_unit_cell_type_a(unit_x, unit_y):
-    """Returns if unit cell is of type A (true) or B (false)"""
-    return ((unit_x + unit_y) % 2) == 0
-
-
-def calculate_variable_direction(var_index, vars_per_cell=8, unit_cells_per_row=16):
-    """Calculate the direction associated with the variable."""
-    unit_x, unit_y, rel_var = get_var_traits(var_index, vars_per_cell=vars_per_cell,
-                                             unit_cells_per_row=unit_cells_per_row)
-    dx, dy, side = graphbuilder.Graph.var_connections[rel_var]
-    # dx and dy are defined as A to B, so if B then reverse
-    if not is_unit_cell_type_a(unit_x, unit_y):
-        dx, dy = -dx, -dy
-    return dx, dy
 
 
 def edge_is_satisfied(variable_values, edges, vara, varb):

@@ -22,14 +22,15 @@ class ExperimentConfig:
         self.h = h
 
     def build_graph(self, max_x=8, max_y=16, min_x=0, min_y=0, j=1.0, h=0.0, hs_override=None):
-        graph = graphbuilder.Graph(j=j)
-        graph.add_cells([
+        gb = graphbuilder.GraphBuilder(j=j)
+        gb.add_cells([
             (x, y)
             for x in range(min_x, max_x)
             for y in range(min_y, max_y)
         ])
-        graph.connect_all()
-        self.hs, self.graph = graph.build(h=h or self.h)
+        gb.connect_all()
+        self.graph = gb.build(h=h or self.h)
+        self.hs = self.graph.hs
         self.effective_temp = self.machine_temp / j
         if hs_override is not None:
             self.hs.update(hs_override)
@@ -68,7 +69,7 @@ class ExperimentConfig:
                 raise Exception("Graph not yet built")
             print("\tRunning on dwave... ", end='')
 
-            response = DWaveSampler().sample_ising(self.hs, self.graph,
+            response = DWaveSampler().sample_ising(self.hs, self.graph.edges,
                                                    num_reads=self.num_reads, auto_scale=self.auto_scale)
             self.data = [({k: sample[k] for k in sample}, energy, num_occurences) for sample, energy, num_occurences in
                          response.data()]
@@ -78,17 +79,17 @@ class ExperimentConfig:
     def analyze(self):
         print("\tRunning analysis...")
         def color_by_sign(var_a, var_b):
-            if self.graph[(var_a, var_b)] < 0:
+            if self.graph.edges[(var_a, var_b)] < 0:
                 return "rgb(0,0,0)"
             else:
                 return "rgb(255,0,0)"
 
         print("\tMaking lattice svgs")
-        svg = graphdrawing.make_edges_svg(list(self.graph), color_fn=color_by_sign, front=True)
+        svg = graphdrawing.make_edges_svg(list(self.graph.edges), color_fn=color_by_sign, front=True)
         if svg:
             with open(os.path.join(self.base_dir, "front_lattice.svg"), "w") as w:
                 w.write(svg)
-        svg = graphdrawing.make_edges_svg(list(self.graph), color_fn=color_by_sign, front=False)
+        svg = graphdrawing.make_edges_svg(list(self.graph.edges), color_fn=color_by_sign, front=False)
         if svg:
             with open(os.path.join(self.base_dir, "rear_lattice.svg"), "w") as w:
                 w.write(svg)
@@ -110,52 +111,64 @@ class ExperimentConfig:
             print("\tDrawing dimer svgs")
             lowest_e = numpy.argmin(energies)
             sample, energy, num_occurrences = self.data[lowest_e]
-            draw_dimers(os.path.join(self.base_dir, "front_min_energy_dimers.svg"), self.graph, sample,
+            draw_dimers(os.path.join(self.base_dir, "front_min_energy_dimers.svg"), self.graph.edges, sample,
                         front=True, color_on_orientation=False)
-            draw_dimers(os.path.join(self.base_dir, "front_min_energy_dimers_color.svg"), self.graph, sample,
+            draw_dimers(os.path.join(self.base_dir, "front_min_energy_dimers_color.svg"), self.graph.edges, sample,
                         front=True, color_on_orientation=True)
 
-            draw_dimers(os.path.join(self.base_dir, "rear_min_energy_dimers.svg"), self.graph, sample,
+            draw_dimers(os.path.join(self.base_dir, "rear_min_energy_dimers.svg"), self.graph.edges, sample,
                         front=False, color_on_orientation=False)
-            draw_dimers(os.path.join(self.base_dir, "rear_min_energy_dimers_color.svg"), self.graph, sample,
+            draw_dimers(os.path.join(self.base_dir, "rear_min_energy_dimers_color.svg"), self.graph.edges, sample,
                         front=False, color_on_orientation=False)
 
             # Now plot the correlation matrix for the variables, and the correlation as a function of distance.
+            print("\tCalculating variable correlations")
+            var_corr, distance_corr, _, __ = graph_analyzer.calculate_correlation_function()
+            distance_corr = numpy.nan_to_num(distance_corr)
+            pyplot.imshow(var_corr, interpolation='nearest')
+            pyplot.colorbar()
+            pyplot.savefig(os.path.join(self.base_dir, "variable_correlations.svg"))
+            pyplot.clf()
 
-            # print("\tCalculating variable correlations")
-            # var_corr, distance_corr, distance_stdv, all_vars = graph_analyzer.calculate_correlation_function()
-            # distance_corr = numpy.nan_to_num(distance_corr)
-            # distance_stdv = numpy.nan_to_num(distance_stdv)
-            # pyplot.imshow(var_corr, interpolation='nearest')
-            # pyplot.colorbar()
-            # pyplot.savefig(os.path.join(self.base_dir, "variable_correlations.svg"))
-            # pyplot.clf()
-            #
-            # # Now the distance part, with error bars.
-            # print("\tCalculating distance correlations")
-            # average_corrs = numpy.mean(distance_corr, 0)
-            # stdv_corrs = numpy.sqrt(numpy.var(distance_corr, 0))
-            # xs = numpy.arange(average_corrs.shape[0])
-            # pyplot.errorbar(xs, average_corrs, yerr=stdv_corrs, label="Average")
-            # pyplot.legend()
-            # pyplot.grid()
-            # pyplot.xlabel("Distance (in # edges)")
-            # pyplot.ylabel("Correlation")
-            # pyplot.savefig(os.path.join(self.base_dir, "correlation_distance.svg"))
-            # pyplot.clf()
-            #
-            # # Similarly, get the correlation plot for the dimers
-            # print("\tCalculating dimer correlations")
-            # dimer_corrs = graph_analyzer.get_dimer_correlations()
-            # pyplot.imshow(dimer_corrs, interpolation='nearest')
-            # pyplot.colorbar()
-            # pyplot.savefig(os.path.join(self.base_dir, "dimer_correlations.svg"))
-            # pyplot.clf()
+            # Now the distance part, with error bars.
+            print("\tCalculating distance correlations")
+            average_corrs = numpy.mean(distance_corr, 0)
+            stdv_corrs = numpy.sqrt(numpy.var(distance_corr, 0))
+            xs = numpy.arange(average_corrs.shape[0])
+            pyplot.errorbar(xs, average_corrs, yerr=stdv_corrs, label="Average")
+            pyplot.legend()
+            pyplot.grid()
+            pyplot.xlabel("Distance (in # edges)")
+            pyplot.ylabel("Correlation")
+            pyplot.savefig(os.path.join(self.base_dir, "correlation_distance.svg"))
+            pyplot.clf()
+
+            # Similarly, get the correlation plot for the dimers
+            print("\tCalculating dimer correlations")
+            dimer_corrs, distance_corr, _, __ = graph_analyzer.calculate_dimer_correlation_function()
+            distance_corr = numpy.nan_to_num(distance_corr)
+            pyplot.imshow(dimer_corrs, interpolation='nearest')
+            pyplot.colorbar()
+            pyplot.savefig(os.path.join(self.base_dir, "dimer_correlations.svg"))
+            pyplot.clf()
+
+            # Now the distance part, with error bars.
+            print("\tCalculating distance correlations")
+            average_corrs = numpy.mean(distance_corr, 0)
+            stdv_corrs = numpy.sqrt(numpy.var(distance_corr, 0))
+            xs = numpy.arange(average_corrs.shape[0])
+            pyplot.errorbar(xs, average_corrs, yerr=stdv_corrs, label="Average")
+            pyplot.legend()
+            pyplot.grid()
+            pyplot.xlabel("Dimer distance (in # edges in dimer-dual)")
+            pyplot.ylabel("Correlation")
+            pyplot.savefig(os.path.join(self.base_dir, "dimer_correlation_distance.svg"))
+            pyplot.clf()
 
             # Get the average dimer occupations
             print("\tDrawing dimer occupations")
             average_dimers, stdv_dimers = draw_occupations(os.path.join(self.base_dir, "dimer_occupation_graph.svg"),
-                                                           self.graph, graph_analyzer)
+                                                           self.graph.edges, graph_analyzer)
             # Sort them
             average_dimers, stdv_dimers = zip(*sorted(zip(average_dimers, stdv_dimers), key=lambda x: x[0]))
             average_dimers = numpy.asarray(average_dimers)
@@ -175,7 +188,7 @@ class ExperimentConfig:
 
             # Get flippable plaquettes
             print("\tDrawing flippable states")
-            draw_flippable_states(os.path.join(self.base_dir, "dimer_flippable_plot.svg"), self.graph, sample)
+            draw_flippable_states(os.path.join(self.base_dir, "dimer_flippable_plot.svg"), self.graph.edges, sample)
 
             print("\tCalculating flippable count")
             flippable_squares = graph_analyzer.get_flippable_squares()
@@ -228,8 +241,8 @@ def make_run_dir(data_dir, run_format="run_{}"):
 def draw_dimers(filename, graph, sample, front=True, color_on_orientation=True):
 
     def color_on_orientation_fn(var_a, var_b):
-        dx_a, dy_a = graphanalysis.calculate_variable_direction(var_a)
-        dx_b, dy_b = graphanalysis.calculate_variable_direction(var_b)
+        dx_a, dy_a = graphbuilder.calculate_variable_direction(var_a)
+        dx_b, dy_b = graphbuilder.calculate_variable_direction(var_b)
         # Vertical and horizontal bonds are green (and rare)
         if dx_a == -dx_b or dy_a == -dy_b:
             return "green"
@@ -253,8 +266,7 @@ def draw_dimers(filename, graph, sample, front=True, color_on_orientation=True):
                 w.write(svg)
 
 
-def draw_occupations(filename, graph, graph_analyzer, front=True):
-    edge_lookup = graph_analyzer.get_edge_lookup()
+def draw_occupations(filename, edges, graph_analyzer, front=True):
     dimer_matrix = graph_analyzer.get_dimer_matrix()
     average_dimers = numpy.mean(dimer_matrix == 1, -1)
     stdv_dimers = numpy.var(dimer_matrix == 1, -1)
@@ -262,12 +274,12 @@ def draw_occupations(filename, graph, graph_analyzer, front=True):
     # Basic color scheme
     def dimer_color_fn(var_a, var_b):
         edge = (min(var_a, var_b), max(var_a, var_b))
-        edge_indx = edge_lookup[edge]
+        edge_indx = graph_analyzer.graph.edge_lookup[edge]
         average_values = average_dimers[edge_indx]
         red_color = int(average_values*256)
         return "rgb({},0,0)".format(red_color)
 
-    svg = graphdrawing.make_dimer_contents(graph, front=front, dimer_color_fn=dimer_color_fn)
+    svg = graphdrawing.make_dimer_contents(edges, front=front, dimer_color_fn=dimer_color_fn)
     svg = graphdrawing.wrap_with_svg(svg)
     if svg:
         with open(filename, "w") as w:
@@ -278,8 +290,8 @@ def draw_occupations(filename, graph, graph_analyzer, front=True):
 
 def draw_flippable_states(filename, graph, sample, front=True):
     def color_on_orientation_fn(var_a, var_b):
-        dx_a, dy_a = graphanalysis.calculate_variable_direction(var_a)
-        dx_b, dy_b = graphanalysis.calculate_variable_direction(var_b)
+        dx_a, dy_a = graphbuilder.calculate_variable_direction(var_a)
+        dx_b, dy_b = graphbuilder.calculate_variable_direction(var_b)
         # Vertical and horizontal bonds are green (and rare)
         if dx_a == -dx_b or dy_a == -dy_b:
             return "green"
@@ -297,7 +309,7 @@ def draw_flippable_states(filename, graph, sample, front=True):
         else:
             return "gray"
 
-    svg = svg = graphdrawing.make_dimer_svg(graph, sample, front=front, dimer_color_fn=color_on_orientation_fn,
+    svg = graphdrawing.make_dimer_svg(graph, sample, front=front, dimer_color_fn=color_on_orientation_fn,
                                             flippable_color_fn=flippable_color_fn)
     if svg:
         with open(filename, "w") as w:
@@ -328,10 +340,10 @@ def run_experiment_sweep(base_directory, experiment_gen, plot_functions=None):
 
 
 if __name__ == "__main__":
-    experiment_name = "data/h_sweep"
+    experiment_name = "data/test_single"
 
     def experiment_gen(base_dir):
-        n = 10
+        n = 2
         for i in range(0, n):
             print("Running experiment {}".format(i))
             h = float(i) / n
@@ -340,7 +352,7 @@ if __name__ == "__main__":
                 os.makedirs(experiment_dir)
             print("\tUsing directory: {}".format(experiment_dir))
             config = ExperimentConfig(experiment_dir, h=h)
-            config.num_reads = 1000
+            config.num_reads = 100
             config.auto_scale = False
             config.build_graph()
             yield config

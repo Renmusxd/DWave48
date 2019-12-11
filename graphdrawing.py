@@ -21,7 +21,7 @@ def position_of_unit_cell(x, y, dist=10):
 
 
 def get_var_pos(index, vars_per_cell=8, unit_cells_per_row=16, dist=10):
-    unit_cell_x, unit_cell_y, var_relative = graphanalysis.get_var_traits(index, vars_per_cell, unit_cells_per_row)
+    unit_cell_x, unit_cell_y, var_relative = graphbuilder.get_var_traits(index, vars_per_cell, unit_cells_per_row)
 
     x, y = position_of_unit_cell(unit_cell_x, unit_cell_y, dist=dist)
     dx, dy = relative_pos_of_relative_index(var_relative)
@@ -54,9 +54,9 @@ def make_edges_contents(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, c
         x1, y1 = get_var_pos(var_a, unit_cells_per_row=unit_cells_per_row, vars_per_cell=vars_per_cell, dist=dist)
         x2, y2 = get_var_pos(var_b, unit_cells_per_row=unit_cells_per_row, vars_per_cell=vars_per_cell, dist=dist)
 
-        a_cell_x, a_cell_y, rel_var_a = graphanalysis.get_var_traits(var_a, unit_cells_per_row=unit_cells_per_row,
+        a_cell_x, a_cell_y, rel_var_a = graphbuilder.get_var_traits(var_a, unit_cells_per_row=unit_cells_per_row,
                                                                      vars_per_cell=vars_per_cell)
-        b_cell_x, b_cell_y, rel_var_b = graphanalysis.get_var_traits(var_b, unit_cells_per_row=unit_cells_per_row,
+        b_cell_x, b_cell_y, rel_var_b = graphbuilder.get_var_traits(var_b, unit_cells_per_row=unit_cells_per_row,
                                                                      vars_per_cell=vars_per_cell)
 
         debug_details_values.append((a_cell_x, a_cell_y, b_cell_x, b_cell_y, rel_var_a, rel_var_b, var_a, var_b))
@@ -87,7 +87,7 @@ def get_normalization(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, fro
     miny = 1e32
     maxy = 0
     for (var_a, var_b) in edges:
-        if graphanalysis.is_front(var_a) != front or graphanalysis.is_front(var_b) != front:
+        if graphbuilder.is_front(var_a) != front or graphbuilder.is_front(var_b) != front:
             continue
         x1, y1 = get_var_pos(var_a, unit_cells_per_row=unit_cells_per_row, vars_per_cell=vars_per_cell, dist=dist)
         x2, y2 = get_var_pos(var_b, unit_cells_per_row=unit_cells_per_row, vars_per_cell=vars_per_cell, dist=dist)
@@ -118,11 +118,11 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
     dimer_positions = {}
     for edge in broken_edges:
         var_a, var_b = edge
-        if graphanalysis.is_front(var_a) != front or graphanalysis.is_front(var_b) != front:
+        if graphbuilder.is_front(var_a) != front or graphbuilder.is_front(var_b) != front:
             continue
-        a_cell_x, a_cell_y, rel_var_a = graphanalysis.get_var_traits(var_a, unit_cells_per_row=unit_cells_per_row,
+        a_cell_x, a_cell_y, rel_var_a = graphbuilder.get_var_traits(var_a, unit_cells_per_row=unit_cells_per_row,
                                                                      vars_per_cell=vars_per_cell)
-        b_cell_x, b_cell_y, rel_var_b = graphanalysis.get_var_traits(var_b, unit_cells_per_row=unit_cells_per_row,
+        b_cell_x, b_cell_y, rel_var_b = graphbuilder.get_var_traits(var_b, unit_cells_per_row=unit_cells_per_row,
                                                                      vars_per_cell=vars_per_cell)
         var_a_pos = numpy.asarray(get_var_pos(var_a, unit_cells_per_row=unit_cells_per_row,
                                               vars_per_cell=vars_per_cell, dist=dist))
@@ -171,9 +171,9 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
         flippable_lookups = collections.defaultdict(list)
         for edge in broken_edges:
             for var in edge:
-                cx, cy, rel = graphanalysis.get_var_traits(var, unit_cells_per_row=unit_cells_per_row,
+                cx, cy, rel = graphbuilder.get_var_traits(var, unit_cells_per_row=unit_cells_per_row,
                                                            vars_per_cell=vars_per_cell)
-                dx, dy = graphanalysis.calculate_variable_direction(var, unit_cells_per_row=unit_cells_per_row,
+                dx, dy = graphbuilder.calculate_variable_direction(var, unit_cells_per_row=unit_cells_per_row,
                                                                     vars_per_cell=vars_per_cell)
                 ox, oy = cx + dx, cy + dy
                 flippable_bond = tuple(sorted(((cx, cy), (ox, oy))))
@@ -232,43 +232,3 @@ def wrap_with_svg(*contents):
     content = "\n".join(contents)
     return '<svg height="500.0pt" version="1.1" width="500.0pt" viewBox="0 0 1 1" ' \
            'xmlns="http://www.w3.org/2000/svg">\n{}</svg>'.format(content)
-
-# def make_combined_dimer_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dist=5,
-#                             edge_color="gray", dimer_edge_color="black",
-#                             front_dimer_color="red", rear_dimer_color="blue"):
-#     """Assuming lattice is the same front and back"""
-#
-#     def all_grey(_, __):
-#         return edge_color
-#
-#     def is_not_broken(vara, varb):
-#         j_val = js[(min(vara, varb), max(vara, varb))]
-#         if j_val > 0:
-#             return var_vals[vara] != var_vals[varb]
-#         else:
-#             return var_vals[vara] == var_vals[varb]
-#
-#     edges = list(js)
-#     broken_edges = [edge for edge in edges if not is_not_broken(edge[0], edge[1])]
-#     background_edges_contents, normalize = make_edges_contents(edges, unit_cells_per_row=unit_cells_per_row,
-#                                                                vars_per_cell=vars_per_cell, dist=dist,
-#                                                                color_fn=all_grey, front=True)  # front and rear the same
-#     background_dimer_contents = make_dimer_contents(edges, normalize, unit_cells_per_row=unit_cells_per_row,
-#                                                     vars_per_cell=vars_per_cell, dist=dist,
-#                                                     dimer_color=dimer_edge_color, width="0.005", front=True)
-#     if background_edges_contents:
-#         rear_dimer_contents = make_dimer_contents(broken_edges, normalize, unit_cells_per_row=unit_cells_per_row,
-#                                                   vars_per_cell=vars_per_cell, dist=dist, dimer_color=rear_dimer_color,
-#                                                   width="0.015", front=False)
-#         front_dimer_contents = make_dimer_contents(broken_edges, normalize, unit_cells_per_row=unit_cells_per_row,
-#                                                    vars_per_cell=vars_per_cell, dist=dist,
-#                                                    dimer_color=front_dimer_color,
-#                                                    width="0.01", front=True)
-#         return '<svg height="500.0pt" version="1.1" width="500.0pt" viewBox="0 0 1 1" ' \
-#                'xmlns="http://www.w3.org/2000/svg">\n{}\n{}\n{}\n{}</svg>'.format(
-#                 background_edges_contents,
-#                 background_dimer_contents,
-#                 rear_dimer_contents,
-#                 front_dimer_contents)
-#     else:
-#         return None
