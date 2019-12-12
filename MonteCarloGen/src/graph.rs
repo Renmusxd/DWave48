@@ -71,8 +71,14 @@ impl GraphState {
             } else {
                 -1.0
             });
-            let chance = (-beta * delta_e).exp();
-            if rng.gen::<f64>() < chance {
+            // If dE < 0 then it will always flip, don't bother calculating odds.
+            let should_flip = if delta_e > 0.0 {
+                let chance = (-beta * delta_e).exp();
+                rng.gen::<f64>() < chance
+            } else {
+                true
+            };
+            if should_flip {
                 spin_state[random_index] = !spin_state[random_index]
             }
             self.state = Some(spin_state);

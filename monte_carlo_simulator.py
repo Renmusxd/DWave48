@@ -3,7 +3,7 @@ import collections
 
 
 class MonteCarloSampler:
-    def __init__(self, beta=5.0, timesteps=1e7):
+    def __init__(self, beta=39.72, timesteps=1e7):
         self.beta = beta
         self.timesteps = timesteps
 
