@@ -143,6 +143,7 @@ class Graph:
         self.all_vars = list(sorted(set(v for edge in self.edges for v in edge)))
 
         if not self.load_if_needed():
+            print("\tCalculating graph features")
             # Order matters
             self.unit_cells, self.unit_cell_bounding_box = self.calculate_unit_cells()
             self.vertex_distances, self.distance_lookup = variable_distances(self.sorted_edges)
@@ -150,11 +151,13 @@ class Graph:
             self.dimer_vertex_list = self.calculate_dimer_vertex_list()
             self.edge_to_vertex_matrix = self.calculate_edge_to_vertex_matrix()
             self.save()
+        else:
+            print("\tLoaded graph features")
 
     def __hash__(self):
         return hash((
             tuple(self.sorted_edges),
-            tuple(self.hs.items()),
+            # tuple(self.hs.items()),
             self.vars_per_cell,
             self.unit_cells_per_row
         ))
@@ -169,11 +172,11 @@ class Graph:
         return False
 
     def overwrite_with(self, config):
-        self.edges = config.edges
-        self.hs = config.hs
-        self.vars_per_cell = config.vars_per_cell
-        self.unit_cells_per_row = config.unit_cells_per_row
-        self.graph_cache = config.graph_cache
+        # self.edges = config.edges
+        # self.hs = config.hs
+        # self.vars_per_cell = config.vars_per_cell
+        # self.unit_cells_per_row = config.unit_cells_per_row
+        # self.graph_cache = config.graph_cache
         self.sorted_edges = config.sorted_edges
         self.edge_lookup = config.edge_lookup
         self.all_vars = config.all_vars

@@ -2,6 +2,7 @@ from dwave.system.samplers import DWaveSampler
 import graphbuilder
 import graphanalysis
 import graphdrawing
+import monte_carlo_simulator
 import pickle
 import os
 import collections
@@ -10,7 +11,7 @@ import numpy
 
 
 class ExperimentConfig:
-    def __init__(self, base_dir, machine_temp=14.5e-3, h=0.0):
+    def __init__(self, base_dir, machine_temp=14.5e-3, h=0.0, j=1.0):
         self.base_dir = base_dir
         self.graph = None
         self.hs = {}
@@ -20,18 +21,19 @@ class ExperimentConfig:
         self.machine_temp = machine_temp
         self.effective_temp = self.machine_temp
         self.h = h
+        self.j = j
 
-    def build_graph(self, max_x=8, max_y=16, min_x=0, min_y=0, j=1.0, h=0.0, hs_override=None):
-        gb = graphbuilder.GraphBuilder(j=j)
+    def build_graph(self, max_x=8, max_y=16, min_x=0, min_y=0, hs_override=None):
+        gb = graphbuilder.GraphBuilder(j=self.j)
         gb.add_cells([
             (x, y)
             for x in range(min_x, max_x)
             for y in range(min_y, max_y)
         ])
         gb.connect_all()
-        self.graph = gb.build(h=h or self.h)
+        self.graph = gb.build(h=self.h)
         self.hs = self.graph.hs
-        self.effective_temp = self.machine_temp / j
+        self.effective_temp = self.machine_temp / self.j
         if hs_override is not None:
             self.hs.update(hs_override)
 
@@ -69,8 +71,12 @@ class ExperimentConfig:
                 raise Exception("Graph not yet built")
             print("\tRunning on dwave... ", end='')
 
-            response = DWaveSampler().sample_ising(self.hs, self.graph.edges,
-                                                   num_reads=self.num_reads, auto_scale=self.auto_scale)
+            # response = DWaveSampler().sample_ising(self.hs, self.graph.edges,
+            #                                        num_reads=self.num_reads, auto_scale=self.auto_scale)
+            response = monte_carlo_simulator.MonteCarloSampler().sample_ising(self.hs, self.graph.edges,
+                                                                              num_reads=self.num_reads,
+                                                                              auto_scale=self.auto_scale)
+
             self.data = [({k: sample[k] for k in sample}, energy, num_occurences) for sample, energy, num_occurences in
                          response.data()]
             print("done!")
@@ -329,19 +335,20 @@ def run_experiment_sweep(base_directory, experiment_gen, plot_functions=None):
 
 
 if __name__ == "__main__":
-    experiment_name = "data/test_single"
+    experiment_name = "data/test_monte_carlo_j_sweep"
 
     def experiment_gen(base_dir):
-        n = 2
+        n = 10
         for i in range(0, n):
             print("Running experiment {}".format(i))
-            h = float(i) / n
+            h = 0.0  # float(i) / n
+            j = float(i+1) / n
             experiment_dir = os.path.join(base_dir, "experiment_{}".format(i))
             if not os.path.exists(experiment_dir):
                 os.makedirs(experiment_dir)
             print("\tUsing directory: {}".format(experiment_dir))
-            config = ExperimentConfig(experiment_dir, h=h)
-            config.num_reads = 100
+            config = ExperimentConfig(experiment_dir, h=h, j=j)
+            config.num_reads = 1000
             config.auto_scale = False
             config.build_graph()
             yield config

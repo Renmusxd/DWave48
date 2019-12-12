@@ -32,8 +32,6 @@ class GraphAnalyzer:
         self.vertex_counts = None
         self.dimer_to_flippable_matrix = None
         self.flippable_squares = None
-        self.dimer_distance_mat = None
-        self.all_dimer_pairs = None
         self.dimer_distance_correlations = None
         self.dimer_distance_stdv = None
 
