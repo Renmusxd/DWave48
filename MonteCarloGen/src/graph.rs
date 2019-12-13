@@ -27,7 +27,7 @@ pub type Edge = (usize, usize);
 impl GraphState {
     pub fn new(edges: &[(Edge, f64)], biases: &[f64]) -> Self {
         // Matrix of all bonds.
-        let mut binding_mat: Vec<Vec<(usize, f64)>> = vec![vec![]; biases.len()*biases.len()];
+        let mut binding_mat: Vec<Vec<(usize, f64)>> = vec![vec![]; biases.len() * biases.len()];
 
         edges.iter().for_each(|((va, vb), j)| {
             binding_mat[*va].push((*vb, *j));
@@ -66,11 +66,8 @@ impl GraphState {
                     -2.0 * (*j) * old_coupling
                 })
                 .sum();
-            let delta_e = delta_e + (2.0 * self.biases[random_index] * if curr_value {
-                1.0
-            } else {
-                -1.0
-            });
+            let delta_e =
+                delta_e + (2.0 * self.biases[random_index] * if curr_value { 1.0 } else { -1.0 });
             // If dE < 0 then it will always flip, don't bother calculating odds.
             let should_flip = if delta_e > 0.0 {
                 let chance = (-beta * delta_e).exp();

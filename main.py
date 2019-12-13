@@ -335,7 +335,7 @@ def run_experiment_sweep(base_directory, experiment_gen, plot_functions=None):
 
 
 if __name__ == "__main__":
-    experiment_name = "data/monte_carlo_jsweep_lowtemp"
+    experiment_name = "data/monte_carlo_jsweep_annealed"
 
     def experiment_gen(base_dir):
         n = 10
