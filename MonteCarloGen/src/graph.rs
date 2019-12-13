@@ -2,6 +2,7 @@ use rand::prelude::*;
 use std::fmt::{Debug, Error, Formatter};
 
 pub struct GraphState {
+    edges: Vec<(Edge, f64)>,
     binding_mat: Vec<Vec<(usize, f64)>>,
     biases: Vec<f64>,
     state: Option<Vec<bool>>,
@@ -39,44 +40,114 @@ impl GraphState {
         });
 
         GraphState {
+            edges: edges.to_vec(),
             binding_mat,
             biases: biases.to_vec(),
             state: Some(GraphState::make_random_spin_state(biases.len())),
         }
     }
 
-    pub fn do_time_step(&mut self, beta: f64) -> Result<(), String> {
-        let mut rng = rand::thread_rng();
-        let random_index = rng.gen_range(0, self.biases.len());
+    pub fn do_spin_flip(
+        rng: &mut ThreadRng,
+        beta: f64,
+        binding_mat: &[Vec<(usize, f64)>],
+        biases: &[f64],
+        state: &mut [bool],
+    ) {
+        let random_index = rng.gen_range(0, state.len());
+        let curr_value = state[random_index];
+        // new - old
+        let binding_slice = &binding_mat[random_index];
+        let delta_e: f64 = binding_slice
+            .iter().cloned()
+            .map(|(indx, j)| {
+                let old_coupling = if !(curr_value ^ state[indx]) {
+                    1.0
+                } else {
+                    -1.0
+                };
+                // j*new - j*old = j*(-old) - j*(old) = -2j*(old)
+                -2.0 * j * old_coupling
+            })
+            .sum();
+        let delta_e = delta_e + (2.0 * biases[random_index] * if curr_value { 1.0 } else { -1.0 });
+        if Self::should_flip(rng, beta, delta_e) {
+            state[random_index] = !state[random_index]
+        }
+    }
 
-        // Energy cost of this flip
-        if let Some(mut spin_state) = self.state.take() {
-            let curr_value = spin_state[random_index];
-            // new - old
-            let binding_slice = &self.binding_mat[random_index];
+    fn do_edge_flip(
+        rng: &mut ThreadRng,
+        beta: f64,
+        edges: &[(Edge, f64)],
+        binding_mat: &[Vec<(usize, f64)>],
+        biases: &[f64],
+        state: &mut [bool],
+    ) {
+        let indx_edge = rng.gen_range(0, edges.len());
+        let ((va, vb), _) = edges[indx_edge];
+
+        let delta_e = |va: usize, vb: usize| -> f64 {
+            let curr_value = state[va];
+            let binding_slice = &binding_mat[va];
             let delta_e: f64 = binding_slice
-                .iter()
+                .iter().cloned()
                 .map(|(indx, j)| {
-                    let old_coupling = if (curr_value ^ spin_state[*indx]) == false {
-                        1.0
+                    // Skip vb since it will also flip.
+                    if indx == vb {
+                        0.0
                     } else {
-                        -1.0
-                    };
-                    // j*new - j*old = j*(-old) - j*(old) = -2j*(old)
-                    -2.0 * (*j) * old_coupling
+                        let old_coupling = if !(curr_value ^ state[indx]) {
+                            1.0
+                        } else {
+                            -1.0
+                        };
+                        // j*new - j*old = j*(-old) - j*(old) = -2j*(old)
+                        -2.0 * j * old_coupling
+                    }
                 })
                 .sum();
-            let delta_e =
-                delta_e + (2.0 * self.biases[random_index] * if curr_value { 1.0 } else { -1.0 });
-            // If dE < 0 then it will always flip, don't bother calculating odds.
-            let should_flip = if delta_e > 0.0 {
-                let chance = (-beta * delta_e).exp();
-                rng.gen::<f64>() < chance
-            } else {
-                true
-            };
-            if should_flip {
-                spin_state[random_index] = !spin_state[random_index]
+            delta_e + (2.0 * biases[va] * if curr_value { 1.0 } else { -1.0 })
+        };
+        let delta_e = delta_e(va, vb) + delta_e(vb, va);
+        if Self::should_flip(rng, beta, delta_e) {
+            state[va] = !state[va];
+            state[vb] = !state[vb];
+        }
+    }
+
+    pub fn should_flip(rng: &mut ThreadRng, beta: f64, delta_e: f64) -> bool {
+        // If dE < 0 then it will always flip, don't bother calculating odds.
+        if delta_e > 0.0 {
+            let chance = (-beta * delta_e).exp();
+            rng.gen::<f64>() < chance
+        } else {
+            true
+        }
+    }
+
+    pub fn do_time_step(&mut self, beta: f64) -> Result<(), String> {
+        let mut rng = rand::thread_rng();
+        // Energy cost of this flip
+        if let Some(mut spin_state) = self.state.take() {
+            let choice = rng.gen_range(0, 2);
+            match choice {
+                0 => Self::do_spin_flip(
+                    &mut rng,
+                    beta,
+                    &self.binding_mat,
+                    &self.biases,
+                    &mut spin_state,
+                ),
+                1 => Self::do_edge_flip(
+                    &mut rng,
+                    beta,
+                    &self.edges,
+                    &self.binding_mat,
+                    &self.biases,
+                    &mut spin_state,
+                ),
+                _ => unreachable!(),
             }
             self.state = Some(spin_state);
             Ok(())
@@ -96,11 +167,7 @@ impl GraphState {
                 let total_e: f64 = binding_slice
                     .iter()
                     .map(|(indx, j)| -> f64 {
-                        let old_coupling = if (si ^ state[*indx]) == false {
-                            1.0
-                        } else {
-                            -1.0
-                        };
+                        let old_coupling = if !(si ^ state[*indx]) { 1.0 } else { -1.0 };
                         j * old_coupling / 2.0
                     })
                     .sum();

@@ -339,7 +339,7 @@ if __name__ == "__main__":
 
     def experiment_gen(base_dir):
         n = 10
-        for i in range(0, n):
+        for i in range(n):
             print("Running experiment {}".format(i))
             h = 0.0  # float(i) / n
             j = float(i+1) / n

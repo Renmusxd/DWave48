@@ -33,7 +33,7 @@ fn run_monte_carlo_annealing(
     biases: Vec<f64>,
 ) -> Vec<(f64, Vec<bool>)> {
     betas.sort_by_key(|(i, _)| *i);
-    if betas.len() == 0 {
+    if betas.is_empty() {
         betas.push((0, 1.0));
         betas.push((timesteps, 1.0));
     }
@@ -55,7 +55,7 @@ fn run_monte_carlo_annealing(
             let mut beta_index = 0;
             for i in 0..timesteps {
                 while i > betas[beta_index + 1].0 {
-                    beta_index = beta_index + 1;
+                    beta_index += 1;
                 }
                 let (ia, va) = betas[beta_index];
                 let (ib, vb) = betas[beta_index + 1];
