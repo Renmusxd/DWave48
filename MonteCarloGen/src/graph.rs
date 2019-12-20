@@ -59,7 +59,8 @@ impl GraphState {
         // new - old
         let binding_slice = &binding_mat[random_index];
         let delta_e: f64 = binding_slice
-            .iter().cloned()
+            .iter()
+            .cloned()
             .map(|(indx, j)| {
                 let old_coupling = if !(curr_value ^ state[indx]) {
                     1.0
@@ -91,7 +92,8 @@ impl GraphState {
             let curr_value = state[va];
             let binding_slice = &binding_mat[va];
             let delta_e: f64 = binding_slice
-                .iter().cloned()
+                .iter()
+                .cloned()
                 .map(|(indx, j)| {
                     // Skip vb since it will also flip.
                     if indx == vb {

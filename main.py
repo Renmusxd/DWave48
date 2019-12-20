@@ -11,8 +11,9 @@ import numpy
 
 
 class ExperimentConfig:
-    def __init__(self, base_dir, machine_temp=14.5e-3, h=0.0, j=1.0):
+    def __init__(self, base_dir, sampler_fn, machine_temp=14.5e-3, h=0.0, j=1.0):
         self.base_dir = base_dir
+        self.sampler_fn = sampler_fn
         self.graph = None
         self.hs = {}
         self.num_reads = 0
@@ -70,12 +71,9 @@ class ExperimentConfig:
             if self.graph is None:
                 raise Exception("Graph not yet built")
             print("\tRunning on dwave... ", end='')
-
-            # response = DWaveSampler().sample_ising(self.hs, self.graph.edges,
-            #                                        num_reads=self.num_reads, auto_scale=self.auto_scale)
-            response = monte_carlo_simulator.MonteCarloSampler().sample_ising(self.hs, self.graph.edges,
-                                                                              num_reads=self.num_reads,
-                                                                              auto_scale=self.auto_scale)
+            response = self.sampler_fn().sample_ising(self.hs, self.graph.edges,
+                                                      num_reads=self.num_reads,
+                                                      auto_scale=self.auto_scale)
 
             self.data = [({k: sample[k] for k in sample}, energy, num_occurences) for sample, energy, num_occurences in
                          response.data()]
@@ -335,9 +333,13 @@ def run_experiment_sweep(base_directory, experiment_gen, plot_functions=None):
 
 
 if __name__ == "__main__":
-    experiment_name = "data/monte_carlo_jsweep_annealed"
+    experiment_name = "data/monte_carlo_jsweep_annealed_lowt"
 
     def experiment_gen(base_dir):
+        def sampler_fn():
+            # return DWaveSampler()
+            return monte_carlo_simulator.MonteCarloSampler()
+
         n = 10
         for i in range(n):
             print("Running experiment {}".format(i))
@@ -347,7 +349,7 @@ if __name__ == "__main__":
             if not os.path.exists(experiment_dir):
                 os.makedirs(experiment_dir)
             print("\tUsing directory: {}".format(experiment_dir))
-            config = ExperimentConfig(experiment_dir, h=h, j=j)
+            config = ExperimentConfig(experiment_dir, sampler_fn, h=h, j=j)
             config.num_reads = 1000
             config.auto_scale = False
             config.build_graph()
