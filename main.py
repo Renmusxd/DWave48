@@ -20,7 +20,6 @@ class ExperimentConfig:
         self.auto_scale = True
         self.data = None
         self.machine_temp = machine_temp
-        self.effective_temp = self.machine_temp
         self.h = h
         self.j = j
 
@@ -34,7 +33,6 @@ class ExperimentConfig:
         gb.connect_all()
         self.graph = gb.build(h=self.h)
         self.hs = self.graph.hs
-        self.effective_temp = self.machine_temp / self.j
         if hs_override is not None:
             self.hs.update(hs_override)
 
@@ -209,15 +207,15 @@ class ExperimentConfig:
             defects = (average_defects, stdv_defects)
             flippables = (flippable_count, flippable_stdv)
             print("\tDone!")
-            return ExperimentResults(self.base_dir, defects, flippables, self.effective_temp, self.h)
+            return ExperimentResults(self.base_dir, defects, flippables, self.j, self.h)
 
 
 class ExperimentResults:
-    def __init__(self, filepath, defects, flippables, effective_temp, h):
+    def __init__(self, filepath, defects, flippables, j, h):
         self.filepath = filepath
         self.defects = defects
         self.flippables = flippables
-        self.effective_temp = effective_temp
+        self.j = j
         self.h = h
 
     def get_named_scalars(self):
@@ -226,7 +224,8 @@ class ExperimentResults:
             "defect_stdv": self.defects[1],
             "flippable_count": self.flippables[0],
             "flippable_stdv": self.flippables[1],
-            "effective_temp": self.effective_temp,
+            "j": self.j,
+            "inv_j": 1.0/self.j,
             "h": self.h
         }
 
@@ -356,13 +355,13 @@ if __name__ == "__main__":
             yield config
 
     def defect_plot(scalars):
-        effective_temperatures = scalars['effective_temp']
+        inv_j = scalars['inv_j']
         defects = scalars['defect_count']
         defects_stdv = scalars['defect_stdv']
         hs = scalars['h']
 
-        pyplot.errorbar(effective_temperatures, defects, yerr=defects_stdv)
-        pyplot.xlabel('Effective temperature (K)')
+        pyplot.errorbar(inv_j, defects, yerr=defects_stdv)
+        pyplot.xlabel('1/J')
         pyplot.ylabel('Number of defects')
         pyplot.savefig(os.path.join(experiment_name, 'defects_vs_temp.svg'))
         pyplot.clf()
@@ -375,13 +374,13 @@ if __name__ == "__main__":
 
 
     def flippable_plot(scalars):
-        effective_temperatures = scalars['effective_temp']
+        inv_j = scalars['inv_j']
         flippable_count = scalars['flippable_count']
         flippable_stdv = scalars['flippable_stdv']
         hs = scalars['h']
 
-        pyplot.errorbar(effective_temperatures, flippable_count, yerr=flippable_stdv)
-        pyplot.xlabel('Effective temperature (K)')
+        pyplot.errorbar(inv_j, flippable_count, yerr=flippable_stdv)
+        pyplot.xlabel('1/J')
         pyplot.ylabel('Number of flippable plaquettes')
         pyplot.savefig(os.path.join(experiment_name, 'flippable_vs_temp.svg'))
         pyplot.clf()
