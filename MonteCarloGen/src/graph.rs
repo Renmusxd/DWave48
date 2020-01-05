@@ -128,11 +128,11 @@ impl GraphState {
         }
     }
 
-    pub fn do_time_step(&mut self, beta: f64) -> Result<(), String> {
+    pub fn do_time_step(&mut self, beta: f64, only_basic_moves: bool) -> Result<(), String> {
         let mut rng = rand::thread_rng();
         // Energy cost of this flip
         if let Some(mut spin_state) = self.state.take() {
-            let choice = rng.gen_range(0, 2);
+            let choice = if only_basic_moves { 0 } else { rng.gen_range(0, 2) };
             match choice {
                 0 => Self::do_spin_flip(
                     &mut rng,

@@ -1,4 +1,5 @@
 import numpy
+import scipy.spatial
 import collections
 import pickle
 import os
@@ -147,6 +148,7 @@ class Graph:
             # Order matters
             self.unit_cells, self.unit_cell_bounding_box = self.calculate_unit_cells()
             self.vertex_distances, self.distance_lookup = variable_distances(self.sorted_edges)
+            self.vertex_euclidean_distances = self.calculate_euclidean_distances(self.distance_lookup)
             self.dimer_distance_mat, self.all_dimer_pairs = self.calculate_dimer_distances()
             self.dimer_vertex_list = self.calculate_dimer_vertex_list()
             self.edge_to_vertex_matrix = self.calculate_edge_to_vertex_matrix()
@@ -167,8 +169,7 @@ class Graph:
         if os.path.exists(filename):
             with open(filename, 'rb') as f:
                 config = pickle.load(f)
-            self.overwrite_with(config)
-            return True
+            return self.overwrite_with(config)
         return False
 
     def overwrite_with(self, config):
@@ -177,17 +178,23 @@ class Graph:
         # self.vars_per_cell = config.vars_per_cell
         # self.unit_cells_per_row = config.unit_cells_per_row
         # self.graph_cache = config.graph_cache
-        self.sorted_edges = config.sorted_edges
-        self.edge_lookup = config.edge_lookup
-        self.all_vars = config.all_vars
-        self.unit_cells = config.unit_cells
-        self.unit_cell_bounding_box = config.unit_cell_bounding_box
-        self.vertex_distances = config.vertex_distances
-        self.distance_lookup = config.distance_lookup
-        self.dimer_distance_mat = config.dimer_distance_mat
-        self.all_dimer_pairs = config.all_dimer_pairs
-        self.dimer_vertex_list = config.dimer_vertex_list
-        self.edge_to_vertex_matrix = config.edge_to_vertex_matrix
+        try:
+            self.sorted_edges = config.sorted_edges
+            self.edge_lookup = config.edge_lookup
+            self.all_vars = config.all_vars
+            self.unit_cells = config.unit_cells
+            self.unit_cell_bounding_box = config.unit_cell_bounding_box
+            self.vertex_distances = config.vertex_distances
+            self.distance_lookup = config.distance_lookup
+            self.dimer_distance_mat = config.dimer_distance_mat
+            self.all_dimer_pairs = config.all_dimer_pairs
+            self.dimer_vertex_list = config.dimer_vertex_list
+            self.edge_to_vertex_matrix = config.edge_to_vertex_matrix
+            self.vertex_euclidean_distances = config.vertex_euclidean_distances
+            return True
+        except AttributeError as e:
+            print(e)
+            return False
 
     def save(self):
         if not os.path.exists(self.graph_cache):
@@ -195,6 +202,12 @@ class Graph:
         filename = os.path.join(self.graph_cache, '{}.pickle'.format(hash(self)))
         with open(filename, 'wb') as w:
             pickle.dump(self, w)
+
+    def calculate_euclidean_distances(self, variables, inner_edge_d=1.0, output_edge_d=1.0):
+        points = numpy.asarray([get_var_cartesian(var, self.vars_per_cell, self.unit_cells_per_row,
+                                                  inner_edge_d=inner_edge_d, output_edge_d=output_edge_d)
+                                for var in variables])
+        return scipy.spatial.distance_matrix(points, points)
 
     def calculate_dimer_distances(self):
         edge_lookup = self.edge_lookup
@@ -298,6 +311,46 @@ def get_var_traits(index, vars_per_cell=8, unit_cells_per_row=16):
     unit_cell_x = unit_cell_index % unit_cells_per_row
     unit_cell_y = unit_cell_index // unit_cells_per_row
     return unit_cell_x, unit_cell_y, var_relative
+
+
+def relative_pos_of_relative_index(relative_index, dist=1.0):
+    """
+    Get the relative position of a relative index compared to its unit cell center.
+    :param relative_index:
+    :param dist:
+    :return:
+    """
+    if relative_index == 0 or relative_index == 2:
+        return 0, -dist
+    elif relative_index == 1 or relative_index == 3:
+        return 0, dist
+    elif relative_index == 4 or relative_index == 6:
+        return -dist, 0
+    elif relative_index == 5 or relative_index == 7:
+        return dist, 0
+
+
+def get_var_cartesian(index, vars_per_cell=8, unit_cells_per_row=16, inner_edge_d=1.0, output_edge_d=1.0):
+    """
+    Get the cartesian coords of the variable.
+    :param index:
+    :param vars_per_cell:
+    :param unit_cells_per_row:
+    :param inner_edge_d:
+    :param output_edge_d:
+    :return:
+    """
+    unit_x, unit_y, rel_indx = get_var_traits(index, vars_per_cell=vars_per_cell, unit_cells_per_row=unit_cells_per_row)
+    # sqrt(d^2 + d^2)/2 = sqrt(2 d^2)/2 = sqrt(d^2 / 2) = d/sqrt(2)
+    unit_cell_radius = inner_edge_d / numpy.sqrt(2)
+    unit_cell_d = 2*unit_cell_radius + output_edge_d
+
+    cx, cy = unit_cell_d*unit_x, unit_cell_d*unit_y
+    dx, dy = relative_pos_of_relative_index(rel_indx, unit_cell_radius)
+    if not is_type_a(unit_x, unit_y):
+        dx = -dx
+        dy = -dy
+    return cx + dx, cy + dy
 
 
 def get_dimer_vertices_for_edge(vara, varb, vars_per_cell=8, unit_cells_per_row=16):

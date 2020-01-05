@@ -17,5 +17,4 @@ rayon = "^1.2.1"
 
 [dependencies.pyo3]
 version = "^0.8.3"
-pyo3-pack = "^0.8.3"
 features = ["extension-module"]

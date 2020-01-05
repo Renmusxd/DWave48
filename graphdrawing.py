@@ -158,23 +158,26 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
             raise Exception("Not sure how to draw dimer across {}-{}".format(var_a, var_b))
 
     output = io.StringIO()
-    for (var_a, var_b), ((start_x, start_y), (stop_x, stop_y)) in dimer_positions.items():
-        title_text = "Dimer across edge between sites {}-{}".format(var_a, var_b)
-        output.write(
-            '<line x1="{}" y1="{}" x2="{}" y2="{}" style="stroke:{};stroke-width:{}"><title>{}</title></line>\n'.format(
-                start_x, start_y, stop_x, stop_y, dimer_color_fn(var_a, var_b), width, title_text
-            ))
+
 
     if flippable_color_fn:
         # flippables surround (cell)-(cell) bonds
         # make a lookup table to see which bonds belong to each one
         flippable_lookups = collections.defaultdict(list)
         for edge in broken_edges:
+            vara, varb = edge
+            ax, ay, _ = graphbuilder.get_var_traits(vara, unit_cells_per_row=unit_cells_per_row,
+                                                      vars_per_cell=vars_per_cell)
+            bx, by, _ = graphbuilder.get_var_traits(varb, unit_cells_per_row=unit_cells_per_row,
+                                                      vars_per_cell=vars_per_cell)
+            if ax != bx or ay != by:
+                continue
+
             for var in edge:
                 cx, cy, rel = graphbuilder.get_var_traits(var, unit_cells_per_row=unit_cells_per_row,
-                                                           vars_per_cell=vars_per_cell)
+                                                          vars_per_cell=vars_per_cell)
                 dx, dy = graphbuilder.calculate_variable_direction(var, unit_cells_per_row=unit_cells_per_row,
-                                                                    vars_per_cell=vars_per_cell)
+                                                                   vars_per_cell=vars_per_cell)
                 ox, oy = cx + dx, cy + dy
                 flippable_bond = tuple(sorted(((cx, cy), (ox, oy))))
                 flippable_lookups[flippable_bond].append(edge)
@@ -195,6 +198,14 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
             comment = "Flippable edges ({})-({})".format(str(edges[0]), str(edges[1]))
             output.write('<polygon points="{}" style="{}"><title>{}</title></polygon>\n'.format(points_str, style_str,
                                                                                                 comment))
+
+
+    for (var_a, var_b), ((start_x, start_y), (stop_x, stop_y)) in dimer_positions.items():
+        title_text = "Dimer across edge between sites {}-{}".format(var_a, var_b)
+        output.write(
+            '<line x1="{}" y1="{}" x2="{}" y2="{}" style="stroke:{};stroke-width:{}"><title>{}</title></line>\n'.format(
+                start_x, start_y, stop_x, stop_y, dimer_color_fn(var_a, var_b), width, title_text
+            ))
 
     return output.getvalue()
 

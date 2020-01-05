@@ -3,10 +3,11 @@ import collections
 
 
 class MonteCarloSampler:
-    def __init__(self, beta=39.72, timesteps=1e7, annealed=True):
+    def __init__(self, beta=39.72, timesteps=1e7, annealed=True, only_single_spin_flips=False):
         self.beta = beta
         self.timesteps = timesteps
         self.annealed = annealed
+        self.basic_moves = only_single_spin_flips
 
     def sample_ising(self, hs, edges, num_reads=1, auto_scale=True):
         all_vars = list(sorted(set(v for (va, vb) in edges for v in [va, vb])))
@@ -28,9 +29,10 @@ class MonteCarloSampler:
         hs = [hs[v]/max_abs_e for v in all_vars]
         t = int(self.timesteps)
         if self.annealed:
-            readout = monte_carlo.run_monte_carlo_annealing([(0, 0.0), (t, self.beta)], t, num_reads, edges, hs)
+            readout = monte_carlo.run_monte_carlo_annealing([(0, 0.0), (t, self.beta)],
+                                                            t, num_reads, edges, hs, self.basic_moves)
         else:
-            readout = monte_carlo.run_monte_carlo(self.beta, t, num_reads, edges, hs)
+            readout = monte_carlo.run_monte_carlo(self.beta, t, num_reads, edges, hs, self.basic_moves)
         readout = [(energy, tuple(s)) for energy, s in readout]
         num_occurences = collections.defaultdict(lambda: 0)
         for energy, s in readout:

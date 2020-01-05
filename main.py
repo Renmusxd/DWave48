@@ -145,6 +145,19 @@ class ExperimentConfig:
             pyplot.savefig(os.path.join(self.base_dir, "correlation_distance.svg"))
             pyplot.clf()
 
+            print("\tCalculating euclidean distance correlations")
+            _, euc_distance_corr, _, _ = graph_analyzer.calculate_euclidean_correlation_function()
+            average_euc_corrs = numpy.mean(euc_distance_corr, 0)
+            stdv_euc_corrs = numpy.sqrt(numpy.var(euc_distance_corr, 0))
+            xs = numpy.arange(average_euc_corrs.shape[0])
+            pyplot.errorbar(xs, average_euc_corrs, yerr=stdv_euc_corrs, label="Average")
+            pyplot.legend()
+            pyplot.grid()
+            pyplot.xlabel("Distance (with edge length=1.0)")
+            pyplot.ylabel("Correlation")
+            pyplot.savefig(os.path.join(self.base_dir, "correlation_euclidean_distance.svg"))
+            pyplot.clf()
+
             # Similarly, get the correlation plot for the dimers
             print("\tCalculating dimer correlations")
             dimer_corrs, distance_corr, _, __ = graph_analyzer.calculate_dimer_correlation_function()
@@ -194,7 +207,7 @@ class ExperimentConfig:
 
             print("\tCalculating flippable count")
             flippable_squares = graph_analyzer.get_flippable_squares()
-            flippable_count = numpy.sum(numpy.mean(flippable_squares, -1))
+            flippable_count = numpy.mean(numpy.sum(flippable_squares, 0))
             flippable_stdv = numpy.sqrt(numpy.var(numpy.sum(flippable_squares, 0)))
 
             # Count the defects
@@ -331,14 +344,18 @@ def run_experiment_sweep(base_directory, experiment_gen, plot_functions=None):
             plot_fn(scalars)
 
 
+def monte_carlo_sampler_fn():
+    return monte_carlo_simulator.MonteCarloSampler()
+
+
+def dwave_sampler_fn():
+    return DWaveSampler()
+
+
 if __name__ == "__main__":
     experiment_name = "data/monte_carlo_jsweep_annealed_lowt"
 
     def experiment_gen(base_dir):
-        def sampler_fn():
-            # return DWaveSampler()
-            return monte_carlo_simulator.MonteCarloSampler()
-
         n = 10
         for i in range(n):
             print("Running experiment {}".format(i))
@@ -348,7 +365,7 @@ if __name__ == "__main__":
             if not os.path.exists(experiment_dir):
                 os.makedirs(experiment_dir)
             print("\tUsing directory: {}".format(experiment_dir))
-            config = ExperimentConfig(experiment_dir, sampler_fn, h=h, j=j)
+            config = ExperimentConfig(experiment_dir, monte_carlo_sampler_fn, h=h, j=j)
             config.num_reads = 1000
             config.auto_scale = False
             config.build_graph()
@@ -363,7 +380,7 @@ if __name__ == "__main__":
         pyplot.errorbar(inv_j, defects, yerr=defects_stdv)
         pyplot.xlabel('1/J')
         pyplot.ylabel('Number of defects')
-        pyplot.savefig(os.path.join(experiment_name, 'defects_vs_temp.svg'))
+        pyplot.savefig(os.path.join(experiment_name, 'defects_vs_inv_j.svg'))
         pyplot.clf()
 
         pyplot.errorbar(hs, defects, yerr=defects_stdv)
@@ -382,7 +399,7 @@ if __name__ == "__main__":
         pyplot.errorbar(inv_j, flippable_count, yerr=flippable_stdv)
         pyplot.xlabel('1/J')
         pyplot.ylabel('Number of flippable plaquettes')
-        pyplot.savefig(os.path.join(experiment_name, 'flippable_vs_temp.svg'))
+        pyplot.savefig(os.path.join(experiment_name, 'flippable_vs_inv_j.svg'))
         pyplot.clf()
 
         pyplot.errorbar(hs, flippable_count, yerr=flippable_stdv)

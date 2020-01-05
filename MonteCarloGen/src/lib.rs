@@ -10,13 +10,15 @@ fn run_monte_carlo(
     num_experiments: u64,
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
+    only_basic_moves: Option<bool>
 ) -> Vec<(f64, Vec<bool>)> {
+    let only_basic_moves = only_basic_moves.unwrap_or(false);
     (0..num_experiments)
         .into_par_iter()
         .map(|_| {
             let mut gs = GraphState::new(&edges, &biases);
             for _ in 0..timesteps {
-                gs.do_time_step(beta).unwrap()
+                gs.do_time_step(beta, only_basic_moves).unwrap()
             }
             let e = gs.get_energy();
             (e, gs.get_state())
@@ -31,7 +33,9 @@ fn run_monte_carlo_annealing(
     num_experiments: u64,
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
+    only_basic_moves: Option<bool>
 ) -> Vec<(f64, Vec<bool>)> {
+    let only_basic_moves = only_basic_moves.unwrap_or(false);
     betas.sort_by_key(|(i, _)| *i);
     if betas.is_empty() {
         betas.push((0, 1.0));
@@ -60,7 +64,7 @@ fn run_monte_carlo_annealing(
                 let (ia, va) = betas[beta_index];
                 let (ib, vb) = betas[beta_index + 1];
                 let beta = (vb - va) * ((i - ia) as f64 / (ib - ia) as f64) + va;
-                gs.do_time_step(beta).unwrap()
+                gs.do_time_step(beta, only_basic_moves).unwrap()
             }
             let e = gs.get_energy();
             (e, gs.get_state())

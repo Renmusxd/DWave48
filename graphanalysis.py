@@ -21,6 +21,8 @@ class GraphAnalyzer:
         # from calculate_correlation_function
         self.variable_distance_correlations = None
         self.variable_distance_stdv = None
+        self.variable_euclidean_distance_correlations = None
+        self.variable_euclidean_distance_stdv = None
 
         # from get_dimer_matrix
         self.dimer_matrix = None
@@ -56,29 +58,23 @@ class GraphAnalyzer:
         """
         var_corr = self.get_correlation_matrix()
         if self.variable_distance_correlations is None or self.variable_distance_stdv is None:
-            # max distance (protected from infinity)
-            max_dist = min(numpy.max(self.graph.vertex_distances), len(self.graph.edges))
-            distance_corrs = numpy.zeros((len(self.graph.all_vars), max_dist + 1))
-            distance_stdv = numpy.zeros((len(self.graph.all_vars), max_dist + 1))
-            # Need to find a numpy-ish way to do this stuff.
-            for i, v in enumerate(self.graph.all_vars):
-                totals = numpy.zeros(max_dist + 1)
-                for j in range(len(self.graph.all_vars)):
-                    corr = var_corr[i, j]
-                    d = self.graph.vertex_distances[i, j]
-                    if d <= max_dist:
-                        totals[d] += 1
-                        distance_corrs[i, d] += corr
-                distance_corrs[i, :] = distance_corrs[i, :] / totals
-                for j in range(len(self.graph.all_vars)):
-                    corr = var_corr[i, j]
-                    d = self.graph.vertex_distances[i, j]
-                    if d <= max_dist:
-                        distance_stdv[i, d] += (corr - distance_corrs[i, d]) ** 2
-                distance_stdv[i, :] = numpy.sqrt(distance_stdv[i, :] / totals)
+            distance_corrs, distance_stdv = average_by_distance(self.graph.vertex_distances, var_corr)
             self.variable_distance_correlations = distance_corrs
             self.variable_distance_stdv = distance_stdv
         return var_corr, self.variable_distance_correlations, self.variable_distance_stdv, self.graph.all_vars
+
+    def calculate_euclidean_correlation_function(self):
+        """
+        Calculate correlations as a function of euclidean distance for each variable.
+        :return: NxN matrix of variable correlations, NxD matrix of variable distance correlations, and NxD matrix of
+        standard deviations on the distance correlations, array of N ints which maps index to variable index.
+        """
+        var_corr = self.get_correlation_matrix()
+        if self.variable_euclidean_distance_correlations is None or self.variable_euclidean_distance_stdv is None:
+            distance_corrs, distance_stdv = average_by_distance(self.graph.vertex_euclidean_distances, var_corr)
+            self.variable_euclidean_distance_correlations = distance_corrs
+            self.variable_euclidean_distance_stdv = distance_stdv
+        return var_corr, self.variable_euclidean_distance_correlations, self.variable_euclidean_distance_stdv, self.graph.all_vars
 
     def get_dimer_matrix(self):
         """Get matrix of dimers for each sample."""
@@ -124,27 +120,7 @@ class GraphAnalyzer:
         # all_dimer_pairs maps the index in dimer_distances to the index into self.sorted_edges
         dimer_corr = self.get_dimer_correlations()
         if self.dimer_distance_correlations is None or self.dimer_distance_stdv is None:
-            # max distance (protected from infinity)
-            max_dist = min(numpy.max(self.graph.dimer_distance_mat), self.graph.dimer_distance_mat.shape[0])
-            # Matrices to store values
-            distance_corrs = numpy.zeros((len(self.graph.all_dimer_pairs), max_dist + 1))
-            distance_stdv = numpy.zeros((len(self.graph.all_dimer_pairs), max_dist + 1))
-            # Need to find a numpy-ish way to do this stuff.
-            for i, v in enumerate(self.graph.all_dimer_pairs):
-                totals = numpy.zeros(max_dist + 1)
-                for j in range(len(self.graph.all_dimer_pairs)):
-                    corr = dimer_corr[i, j]
-                    d = self.graph.dimer_distance_mat[i, j]
-                    if d <= max_dist:
-                        totals[d] += 1
-                        distance_corrs[i, d] += corr
-                distance_corrs[i, :] = distance_corrs[i, :] / totals
-                for j in range(len(self.graph.all_dimer_pairs)):
-                    corr = dimer_corr[i, j]
-                    d = self.graph.dimer_distance_mat[i, j]
-                    if d <= max_dist:
-                        distance_stdv[i, d] += (corr - distance_corrs[i, d]) ** 2
-                distance_stdv[i, :] = numpy.sqrt(distance_stdv[i, :] / totals)
+            distance_corrs, distance_stdv = average_by_distance(self.graph.dimer_distance_mat, dimer_corr)
             self.dimer_distance_correlations = distance_corrs
             self.dimer_distance_stdv = distance_stdv
         return dimer_corr, self.dimer_distance_correlations, self.dimer_distance_stdv, self.graph.all_dimer_pairs
@@ -188,6 +164,9 @@ class GraphAnalyzer:
                 if ax != bx or ay != by:
                     continue
                 cx, cy = ax, ay
+
+                orientation = get_variable_orientation(vara, varb)
+
                 # TODO fix this whenever periodic is really working.
                 front = graphbuilder.is_front(vara, vars_per_cell=self.graph.vars_per_cell)
 
@@ -200,16 +179,70 @@ class GraphAnalyzer:
                     connection = tuple(sorted(((cx, cy, front), (ox, oy, front))))
                     if connection in connection_indices:
                         j = connection_indices[connection]
-                        self.dimer_to_flippable_matrix[i, j] = 1
+                        self.dimer_to_flippable_matrix[i, j] = orientation
         return self.dimer_to_flippable_matrix
 
     def get_flippable_squares(self):
         dimers = self.get_dimer_matrix()
         dimer_to_flippable = self.get_dimer_to_flippable_squares_matrix()
-        num_dimers_adjacent_to_flippables = numpy.matmul(dimer_to_flippable.T, dimers==1)
-        flippable_states = num_dimers_adjacent_to_flippables == 2
+        # Check that both adjacent are in the same direction.
+        ori_dimers_adjacent_to_flippables = numpy.matmul(dimer_to_flippable.T, dimers == 1)
+        num_dimers_adjacent_to_flippables = numpy.matmul(numpy.abs(dimer_to_flippable.T), dimers == 1)
+        flippable_states = numpy.logical_and(num_dimers_adjacent_to_flippables == 2,
+                                             numpy.abs(ori_dimers_adjacent_to_flippables) == 2)
         return flippable_states
 
+
+def get_variable_orientation(var_a, var_b):
+    """Returns 0 for vertical, +-1 for diagonal, None for unexpected."""
+    dx_a, dy_a = graphbuilder.calculate_variable_direction(var_a)
+    dx_b, dy_b = graphbuilder.calculate_variable_direction(var_b)
+    # Vertical and horizontal bonds are green (and rare)
+    if dx_a == -dx_b or dy_a == -dy_b:
+        return 0
+    if dx_a == dy_b and dy_a == dx_b:
+        return 1
+    if dx_a == -dy_b and dy_a == -dx_b:
+        return -1
+    return None
+
+
+def average_by_distance(distance_matrix, values_matrix, binsize=1):
+    """
+    TODO
+    :param distance_matrix: NxN matrix of scalar distances.
+    :param values_matrix: NxN matrix of scalar values.
+    :param binsize: size of bins for output
+    :return:
+    """
+    valid_distances = numpy.logical_not(numpy.logical_or(numpy.isinf(distance_matrix), numpy.isnan(distance_matrix)))
+    max_distance = numpy.max(distance_matrix[valid_distances])
+    num_bins = int(numpy.ceil(max_distance / binsize)) + 1
+    num_vars = distance_matrix.shape[0]
+    distance_values = numpy.zeros((num_vars, num_bins))
+    distance_stdv = numpy.zeros((num_vars, num_bins))
+    for i in range(num_vars):
+        # Sum and count
+        totals = numpy.zeros(num_bins)
+        for j in range(num_vars):
+            if valid_distances[i,j]:
+                value = values_matrix[i,j]
+                d = distance_matrix[i,j]
+                d_index = int(numpy.floor(d/binsize))
+                totals[d_index] += 1
+                distance_values[i, d_index] += value
+        # Average the values
+        distance_values[i,:] = distance_values[i, :] / totals
+        # Calculate variance
+        for j in range(num_vars):
+            if valid_distances[i, j]:
+                value = values_matrix[i, j]
+                d = distance_matrix[i, j]
+                d_index = int(numpy.floor(d / binsize))
+                distance_stdv[i, d_index] += (value - distance_values[i, d_index])**2
+        # Calculate standard deviation from variance
+        distance_stdv[i,:] = numpy.sqrt(distance_stdv[i,:]/totals)
+    return distance_values, distance_stdv
 
 def flatten_dicts(samples):
     """
