@@ -199,7 +199,6 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
             output.write('<polygon points="{}" style="{}"><title>{}</title></polygon>\n'.format(points_str, style_str,
                                                                                                 comment))
 
-
     for (var_a, var_b), ((start_x, start_y), (stop_x, stop_y)) in dimer_positions.items():
         title_text = "Dimer across edge between sites {}-{}".format(var_a, var_b)
         output.write(

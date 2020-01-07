@@ -42,7 +42,9 @@ class ExperimentConfig:
             try:
                 with open(filepath, "rb") as f:
                     config = pickle.load(f)
+                backup_graph = self.graph
                 self.override(config)
+                self.graph = backup_graph
                 print("done!")
                 return True
             except Exception as e:
@@ -180,6 +182,20 @@ class ExperimentConfig:
             pyplot.savefig(os.path.join(self.base_dir, "dimer_correlation_distance.svg"))
             pyplot.clf()
 
+            # Now the distance part, with error bars.
+            print("\tCalculating euclidean distance correlations")
+            _, euc_dimer_distance_corr, _, _ = graph_analyzer.calculate_euclidean_dimer_correlation_function()
+            average_euc_corrs = numpy.mean(euc_dimer_distance_corr, 0)
+            stdv_euc_corrs = numpy.sqrt(numpy.var(euc_dimer_distance_corr, 0))
+            xs = numpy.arange(average_euc_corrs.shape[0])
+            pyplot.errorbar(xs, average_euc_corrs, yerr=stdv_euc_corrs, label="Average")
+            pyplot.legend()
+            pyplot.grid()
+            pyplot.xlabel("Dimer distance (with edge length=1.0)")
+            pyplot.ylabel("Correlation")
+            pyplot.savefig(os.path.join(self.base_dir, "dimer_correlation_euclidean_distance.svg"))
+            pyplot.clf()
+
             # Get the average dimer occupations
             print("\tDrawing dimer occupations")
             average_dimers, stdv_dimers = draw_occupations(os.path.join(self.base_dir, "dimer_occupation_graph.svg"),
@@ -212,10 +228,31 @@ class ExperimentConfig:
 
             # Count the defects
             print("\tCounting defects")
-            defects = graph_analyzer.get_dimer_vertex_counts() > 1
+            defects = graph_analyzer.get_defects()
             total_defects_per_sample = numpy.sum(defects, 0)
             average_defects = numpy.mean(total_defects_per_sample, -1)
             stdv_defects = numpy.sqrt(numpy.var(total_defects_per_sample, -1))
+
+            # Get defect correlations
+            print("\tDefect correlations")
+            defects_corr, defects_corr_function, _, _ = graph_analyzer.calculate_euclidean_defect_correlation_function()
+            defects_corr = numpy.nan_to_num(defects_corr)
+            pyplot.imshow(defects_corr, interpolation='nearest')
+            pyplot.colorbar()
+            pyplot.savefig(os.path.join(self.base_dir, "defect_correlations.svg"))
+            pyplot.clf()
+
+            print("\tCalculating distance correlations")
+            average_corrs = numpy.mean(defects_corr_function, 0)
+            stdv_corrs = numpy.sqrt(numpy.var(defects_corr_function, 0))
+            xs = numpy.arange(average_corrs.shape[0])
+            pyplot.errorbar(xs, average_corrs, yerr=stdv_corrs, label="Average")
+            pyplot.legend()
+            pyplot.grid()
+            pyplot.xlabel("Defect distance (with edge length=1.0)")
+            pyplot.ylabel("Correlation")
+            pyplot.savefig(os.path.join(self.base_dir, "defect_correlation_distance.svg"))
+            pyplot.clf()
 
             defects = (average_defects, stdv_defects)
             flippables = (flippable_count, flippable_stdv)

@@ -150,8 +150,10 @@ class Graph:
             self.vertex_distances, self.distance_lookup = variable_distances(self.sorted_edges)
             self.vertex_euclidean_distances = self.calculate_euclidean_distances(self.distance_lookup)
             self.dimer_distance_mat, self.all_dimer_pairs = self.calculate_dimer_distances()
+            self.dimer_euclidean_distances = self.calculate_euclidean_dimer_distances()
             self.dimer_vertex_list = self.calculate_dimer_vertex_list()
             self.edge_to_vertex_matrix = self.calculate_edge_to_vertex_matrix()
+            self.dimer_vertex_distances = self.calculate_dimer_vertex_euclidean_distance()
             self.save()
         else:
             print("\tLoaded graph features")
@@ -191,6 +193,8 @@ class Graph:
             self.dimer_vertex_list = config.dimer_vertex_list
             self.edge_to_vertex_matrix = config.edge_to_vertex_matrix
             self.vertex_euclidean_distances = config.vertex_euclidean_distances
+            self.dimer_euclidean_distances = config.dimer_euclidean_distances
+            self.dimer_vertex_distances = config.dimer_vertex_distances
             return True
         except AttributeError as e:
             print(e)
@@ -225,12 +229,23 @@ class Graph:
                     dimer_pairs.add(edge_pair)
         return variable_distances(dimer_pairs)
 
+    def calculate_euclidean_dimer_distances(self, inner_edge_d=1.0, output_edge_d=1.0):
+        def average_pos(vara, varb):
+            xa, ya = get_var_cartesian(vara, vars_per_cell=self.vars_per_cell, unit_cells_per_row=self.unit_cells_per_row,
+                                       inner_edge_d=inner_edge_d, output_edge_d=output_edge_d)
+
+            xb, yb = get_var_cartesian(varb, vars_per_cell=self.vars_per_cell, unit_cells_per_row=self.unit_cells_per_row,
+                                       inner_edge_d=inner_edge_d, output_edge_d=output_edge_d)
+            return [(xa + xb)/2.0, (ya + yb)/2.0]
+        points = numpy.asarray([average_pos(vara, varb) for vara, varb in self.sorted_edges])
+        return scipy.spatial.distance_matrix(points, points)
+
     def calculate_unit_cells(self):
         """Return sorted list of all unit cells in graph. (x, y, is_front)"""
         var_traits = (get_var_traits(var_indx, self.vars_per_cell, self.unit_cells_per_row)
                       for var_indx in self.all_vars)
         unit_cells = list(sorted(set((cx, cy, is_front(indx, self.vars_per_cell))
-                                          for cx, cy, indx in var_traits)))
+                          for cx, cy, indx in var_traits)))
 
         minx, miny = self.unit_cells_per_row, self.unit_cells_per_row
         maxx, maxy = 0, 0
@@ -276,6 +291,23 @@ class Graph:
             if v2 in dimer_vertex_lookup:
                 edge_to_vertex_matrix[i, dimer_vertex_lookup[v2]] = 1
         return edge_to_vertex_matrix
+
+    def calculate_dimer_vertex_euclidean_distance(self, inner_edge_d=1.0, output_edge_d=1.0):
+        def dimer_vertex_position(dimer_vertex):
+            # If it's a single unit cell (cx, cy, front)
+            if len(dimer_vertex) == 3:
+                dimer_vertex = [dimer_vertex]
+            x, y = 0, 0
+            for cx, cy, _ in dimer_vertex:
+                dx, dy = get_unit_cell_cartesian(cx, cy, inner_edge_d=inner_edge_d, output_edge_d=output_edge_d)
+                x += dx
+                y += dy
+            x = x / float(len(dimer_vertex))
+            y = y / float(len(dimer_vertex))
+            return numpy.asarray([x, y])
+        points = numpy.asarray([dimer_vertex_position(dimer_vertex)
+                                for dimer_vertex in self.dimer_vertex_list])
+        return scipy.spatial.distance_matrix(points, points)
 
 
 def is_front(index, vars_per_cell=8):
@@ -330,6 +362,16 @@ def relative_pos_of_relative_index(relative_index, dist=1.0):
         return dist, 0
 
 
+def get_unit_cell_cartesian(unit_x, unit_y, inner_edge_d=1.0, output_edge_d=1.0):
+    """Get the cartesian position of a unit cell."""
+    # sqrt(d^2 + d^2)/2 = sqrt(2 d^2)/2 = sqrt(d^2 / 2) = d/sqrt(2)
+    unit_cell_radius = inner_edge_d / numpy.sqrt(2)
+    # One radius on either side plus bond between them.
+    unit_cell_d = 2 * unit_cell_radius + output_edge_d
+    cx, cy = unit_cell_d * unit_x, unit_cell_d * unit_y
+    return cx, cy
+
+
 def get_var_cartesian(index, vars_per_cell=8, unit_cells_per_row=16, inner_edge_d=1.0, output_edge_d=1.0):
     """
     Get the cartesian coords of the variable.
@@ -343,9 +385,7 @@ def get_var_cartesian(index, vars_per_cell=8, unit_cells_per_row=16, inner_edge_
     unit_x, unit_y, rel_indx = get_var_traits(index, vars_per_cell=vars_per_cell, unit_cells_per_row=unit_cells_per_row)
     # sqrt(d^2 + d^2)/2 = sqrt(2 d^2)/2 = sqrt(d^2 / 2) = d/sqrt(2)
     unit_cell_radius = inner_edge_d / numpy.sqrt(2)
-    unit_cell_d = 2*unit_cell_radius + output_edge_d
-
-    cx, cy = unit_cell_d*unit_x, unit_cell_d*unit_y
+    cx, cy = get_unit_cell_cartesian(unit_x, unit_y, inner_edge_d=vars_per_cell, output_edge_d=output_edge_d)
     dx, dy = relative_pos_of_relative_index(rel_indx, unit_cell_radius)
     if not is_type_a(unit_x, unit_y):
         dx = -dx

@@ -23,6 +23,8 @@ class GraphAnalyzer:
         self.variable_distance_stdv = None
         self.variable_euclidean_distance_correlations = None
         self.variable_euclidean_distance_stdv = None
+        self.dimer_euclidean_distance_correlations = None
+        self.dimer_euclidean_distance_stdv = None
 
         # from get_dimer_matrix
         self.dimer_matrix = None
@@ -36,6 +38,12 @@ class GraphAnalyzer:
         self.flippable_squares = None
         self.dimer_distance_correlations = None
         self.dimer_distance_stdv = None
+
+        # from get_defect_correlations
+        self.defect_correlations = None
+
+        self.defect_euclidean_distance_correlations = None
+        self.defect_euclidean_distance_stdv = None
 
     def get_flat_samples(self):
         if self.var_map is None or self.var_mat is None:
@@ -125,6 +133,19 @@ class GraphAnalyzer:
             self.dimer_distance_stdv = distance_stdv
         return dimer_corr, self.dimer_distance_correlations, self.dimer_distance_stdv, self.graph.all_dimer_pairs
 
+    def calculate_euclidean_dimer_correlation_function(self):
+        """
+        Calculate correlations as a function of distance for each dimer.
+        :return: NxN matrix of dimer correlations, NxD matrix of dimer distance correlations, and NxD matrix of
+        standard deviations on the distance correlations, array of N ints which maps index to variable index.
+        """
+        dimer_corr = self.get_dimer_correlations()
+        if self.dimer_euclidean_distance_correlations is None or self.dimer_euclidean_distance_stdv is None:
+            distance_corrs, distance_stdv = average_by_distance(self.graph.dimer_euclidean_distances, dimer_corr)
+            self.dimer_euclidean_distance_correlations = distance_corrs
+            self.dimer_euclidean_distance_stdv = distance_stdv
+        return dimer_corr, self.dimer_euclidean_distance_correlations, self.dimer_euclidean_distance_stdv, self.graph.all_vars
+
     def get_dimer_vertex_counts(self):
         if self.vertex_counts is None:
             # Get dimers per sample
@@ -191,6 +212,33 @@ class GraphAnalyzer:
         flippable_states = numpy.logical_and(num_dimers_adjacent_to_flippables == 2,
                                              numpy.abs(ori_dimers_adjacent_to_flippables) == 2)
         return flippable_states
+
+    def get_defects(self):
+        """Return a matrix of defects"""
+        return self.get_dimer_vertex_counts() > 1
+
+    def get_defect_correlations(self):
+        """Get dimer vertex correlations in terms of defects."""
+        if self.defect_correlations is None:
+            # 1 for defects -1 for non-defects
+            defects = self.get_defects() * 2 - 1
+            self.defect_correlations = calculate_correlation_matrix(defects)
+        return self.defect_correlations
+
+    def calculate_euclidean_defect_correlation_function(self):
+        """
+        Calculate correlations as a function of euclidean distance for each dimer vertex.
+        :return: NxN matrix of defect correlations, NxD matrix of defect distance correlations, and NxD matrix of
+        standard deviations on the distance correlations, array of N ints which maps index to dimer vertex index.
+        """
+        defect_corr = self.get_defect_correlations()
+        if self.defect_euclidean_distance_correlations is None or self.defect_euclidean_distance_stdv is None:
+            distance_corrs, distance_stdv = average_by_distance(self.graph.dimer_vertex_distances, defect_corr)
+            self.defect_euclidean_distance_correlations = distance_corrs
+            self.defect_euclidean_distance_stdv = distance_stdv
+        return defect_corr, self.defect_euclidean_distance_correlations, self.defect_euclidean_distance_stdv, self.graph.dimer_vertex_list
+
+
 
 
 def get_variable_orientation(var_a, var_b):
