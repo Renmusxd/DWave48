@@ -390,7 +390,7 @@ def dwave_sampler_fn():
 
 
 if __name__ == "__main__":
-    experiment_name = "data/monte_carlo_jsweep_annealed_lowt"
+    experiment_name = "data/j_sweep"
 
     def experiment_gen(base_dir):
         n = 10
@@ -402,8 +402,8 @@ if __name__ == "__main__":
             if not os.path.exists(experiment_dir):
                 os.makedirs(experiment_dir)
             print("\tUsing directory: {}".format(experiment_dir))
-            config = ExperimentConfig(experiment_dir, monte_carlo_sampler_fn, h=h, j=j)
-            config.num_reads = 1000
+            config = ExperimentConfig(experiment_dir, dwave_sampler_fn, h=h, j=j)
+            config.num_reads = 10000
             config.auto_scale = False
             config.build_graph()
             yield config
