@@ -198,7 +198,7 @@ if __name__ == "__main__":
 
         [2, 3, 6, 7]
     ]
-    for config in configs:
+    for i, config in enumerate(configs):
         def is_valid(indx):
             return indx%8 in config
         points = [get_var_cartesian(indx) for indx in range(2048) if is_valid(indx)]
@@ -209,5 +209,5 @@ if __name__ == "__main__":
         pyplot.title("Config: {}".format(config))
         pyplot.plot(all_xs, all_ys, 'o')
         pyplot.plot(som_xs, som_ys, 'o')
-        pyplot.show()
+        pyplot.savefig('lanl_drawings/{}.png'.format(i))
         pyplot.clf()
