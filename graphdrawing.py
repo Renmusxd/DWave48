@@ -55,9 +55,9 @@ def make_edges_contents(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, c
         x2, y2 = get_var_pos(var_b, unit_cells_per_row=unit_cells_per_row, vars_per_cell=vars_per_cell, dist=dist)
 
         a_cell_x, a_cell_y, rel_var_a = graphbuilder.get_var_traits(var_a, unit_cells_per_row=unit_cells_per_row,
-                                                                     vars_per_cell=vars_per_cell)
+                                                                    vars_per_cell=vars_per_cell)
         b_cell_x, b_cell_y, rel_var_b = graphbuilder.get_var_traits(var_b, unit_cells_per_row=unit_cells_per_row,
-                                                                     vars_per_cell=vars_per_cell)
+                                                                    vars_per_cell=vars_per_cell)
 
         debug_details_values.append((a_cell_x, a_cell_y, b_cell_x, b_cell_y, rel_var_a, rel_var_b, var_a, var_b))
         to_draw_values.append((x1, y1, x2, y2, color_fn(var_a, var_b)))
@@ -121,9 +121,9 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
         if graphbuilder.is_front(var_a) != front or graphbuilder.is_front(var_b) != front:
             continue
         a_cell_x, a_cell_y, rel_var_a = graphbuilder.get_var_traits(var_a, unit_cells_per_row=unit_cells_per_row,
-                                                                     vars_per_cell=vars_per_cell)
+                                                                    vars_per_cell=vars_per_cell)
         b_cell_x, b_cell_y, rel_var_b = graphbuilder.get_var_traits(var_b, unit_cells_per_row=unit_cells_per_row,
-                                                                     vars_per_cell=vars_per_cell)
+                                                                    vars_per_cell=vars_per_cell)
         var_a_pos = numpy.asarray(get_var_pos(var_a, unit_cells_per_row=unit_cells_per_row,
                                               vars_per_cell=vars_per_cell, dist=dist))
         var_b_pos = numpy.asarray(get_var_pos(var_b, unit_cells_per_row=unit_cells_per_row,
@@ -159,7 +159,6 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
 
     output = io.StringIO()
 
-
     if flippable_color_fn:
         # flippables surround (cell)-(cell) bonds
         # make a lookup table to see which bonds belong to each one
@@ -167,9 +166,9 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
         for edge in broken_edges:
             vara, varb = edge
             ax, ay, _ = graphbuilder.get_var_traits(vara, unit_cells_per_row=unit_cells_per_row,
-                                                      vars_per_cell=vars_per_cell)
+                                                    vars_per_cell=vars_per_cell)
             bx, by, _ = graphbuilder.get_var_traits(varb, unit_cells_per_row=unit_cells_per_row,
-                                                      vars_per_cell=vars_per_cell)
+                                                    vars_per_cell=vars_per_cell)
             if ax != bx or ay != by:
                 continue
 

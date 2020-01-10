@@ -25,8 +25,8 @@ class MonteCarloSampler:
         for v in all_vars:
             if v not in hs:
                 hs[v] = 0.0
-        edges = [((all_vars_lookup[va], all_vars_lookup[vb]), j/max_abs_e) for (va, vb), j in edges.items()]
-        hs = [hs[v]/max_abs_e for v in all_vars]
+        edges = [((all_vars_lookup[va], all_vars_lookup[vb]), j / max_abs_e) for (va, vb), j in edges.items()]
+        hs = [hs[v] / max_abs_e for v in all_vars]
         t = int(self.timesteps)
         if self.annealed:
             readout = monte_carlo.run_monte_carlo_annealing([(0, 0.0), (t, self.beta)],

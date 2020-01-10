@@ -82,6 +82,7 @@ class ExperimentConfig:
 
     def analyze(self):
         print("\tRunning analysis...")
+
         def color_by_sign(var_a, var_b):
             if self.graph.edges[(var_a, var_b)] < 0:
                 return "rgb(0,0,0)"
@@ -311,7 +312,7 @@ class ExperimentResults:
             "flippable_count": self.flippables[0],
             "flippable_stdv": self.flippables[1],
             "j": self.j,
-            "inv_j": 1.0/self.j,
+            "inv_j": 1.0 / self.j,
             "h": self.h
         }
 
@@ -365,7 +366,7 @@ def draw_occupations(filename, edges, graph_analyzer, front=True):
         edge = (min(var_a, var_b), max(var_a, var_b))
         edge_indx = graph_analyzer.graph.edge_lookup[edge]
         average_values = average_dimers[edge_indx]
-        red_color = int(average_values*256)
+        red_color = int(average_values * 256)
         return "rgb({},0,0)".format(red_color)
 
     svg = graphdrawing.make_dimer_contents(edges, front=front, dimer_color_fn=dimer_color_fn)
@@ -378,7 +379,6 @@ def draw_occupations(filename, edges, graph_analyzer, front=True):
 
 
 def draw_flippable_states(filename, graph, sample, front=True):
-
     def flippable_color_fn(edge_a, edge_b):
         color_a = color_on_orientation_fn(*edge_a)
         color_b = color_on_orientation_fn(*edge_b)
@@ -428,12 +428,13 @@ def dwave_sampler_fn():
 if __name__ == "__main__":
     experiment_name = "data/monte_carlo_jsweep_annealed_lowt"
 
+
     def experiment_gen(base_dir):
         n = 10
         for i in range(n):
             print("Running experiment {}".format(i))
             h = 0.0  # float(i) / n
-            j = float(i+1) / n
+            j = float(i + 1) / n
             experiment_dir = os.path.join(base_dir, "experiment_{}".format(i))
             if not os.path.exists(experiment_dir):
                 os.makedirs(experiment_dir)
@@ -443,6 +444,7 @@ if __name__ == "__main__":
             config.auto_scale = False
             config.build_graph()
             yield config
+
 
     def defect_plot(scalars):
         inv_j = scalars['inv_j']
@@ -480,6 +482,7 @@ if __name__ == "__main__":
         pyplot.ylabel('Number of flippable plaquettes')
         pyplot.savefig(os.path.join(experiment_name, 'flippable_vs_hs.svg'))
         pyplot.clf()
+
 
     run_experiment_sweep(experiment_name, experiment_gen(experiment_name),
                          plot_functions=[defect_plot, flippable_plot])

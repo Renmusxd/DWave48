@@ -133,6 +133,7 @@ class GraphBuilder:
 
 class Graph:
     """Aspects of the graph which do not rely on data"""
+
     def __init__(self, edges, hs, graph_cache_dir='graphcache', vars_per_cell=8, unit_cells_per_row=16):
         self.edges = edges
         self.hs = hs
@@ -224,19 +225,22 @@ class Graph:
         dimer_pairs = set()
         for _, edges in vertices_to_edges.items():
             for i in range(len(edges)):
-                for j in range(i+1, len(edges)):
+                for j in range(i + 1, len(edges)):
                     edge_pair = tuple(sorted([edges[i], edges[j]]))
                     dimer_pairs.add(edge_pair)
         return variable_distances(dimer_pairs)
 
     def calculate_euclidean_dimer_distances(self, inner_edge_d=1.0, output_edge_d=1.0):
         def average_pos(vara, varb):
-            xa, ya = get_var_cartesian(vara, vars_per_cell=self.vars_per_cell, unit_cells_per_row=self.unit_cells_per_row,
+            xa, ya = get_var_cartesian(vara, vars_per_cell=self.vars_per_cell,
+                                       unit_cells_per_row=self.unit_cells_per_row,
                                        inner_edge_d=inner_edge_d, output_edge_d=output_edge_d)
 
-            xb, yb = get_var_cartesian(varb, vars_per_cell=self.vars_per_cell, unit_cells_per_row=self.unit_cells_per_row,
+            xb, yb = get_var_cartesian(varb, vars_per_cell=self.vars_per_cell,
+                                       unit_cells_per_row=self.unit_cells_per_row,
                                        inner_edge_d=inner_edge_d, output_edge_d=output_edge_d)
-            return [(xa + xb)/2.0, (ya + yb)/2.0]
+            return [(xa + xb) / 2.0, (ya + yb) / 2.0]
+
         points = numpy.asarray([average_pos(vara, varb) for vara, varb in self.sorted_edges])
         return scipy.spatial.distance_matrix(points, points)
 
@@ -245,7 +249,7 @@ class Graph:
         var_traits = (get_var_traits(var_indx, self.vars_per_cell, self.unit_cells_per_row)
                       for var_indx in self.all_vars)
         unit_cells = list(sorted(set((cx, cy, is_front(indx, self.vars_per_cell))
-                          for cx, cy, indx in var_traits)))
+                                     for cx, cy, indx in var_traits)))
 
         minx, miny = self.unit_cells_per_row, self.unit_cells_per_row
         maxx, maxy = 0, 0
@@ -305,6 +309,7 @@ class Graph:
             x = x / float(len(dimer_vertex))
             y = y / float(len(dimer_vertex))
             return numpy.asarray([x, y])
+
         points = numpy.asarray([dimer_vertex_position(dimer_vertex)
                                 for dimer_vertex in self.dimer_vertex_list])
         return scipy.spatial.distance_matrix(points, points)
@@ -408,9 +413,9 @@ def get_dimer_vertices_for_edge(vara, varb, vars_per_cell=8, unit_cells_per_row=
                                                 unit_cells_per_row=unit_cells_per_row)
         unit_cycle = tuple(sorted([
             (cx, cy, front),
-            (cx+adx, cy+ady, front),
-            (cx+bdx, cy+bdy, front),
-            (cx+adx+bdx, cy+ady+bdy, front)
+            (cx + adx, cy + ady, front),
+            (cx + bdx, cy + bdy, front),
+            (cx + adx + bdx, cy + ady + bdy, front)
         ]))
         return (cx, cy, front), unit_cycle
     else:
@@ -421,14 +426,14 @@ def get_dimer_vertices_for_edge(vara, varb, vars_per_cell=8, unit_cells_per_row=
         unit_cycle_a = tuple(sorted([
             (acx, acy, front),
             (bcx, bcy, front),
-            (acx+dy, acy+dx, front),
-            (bcx+dy, bcy+dx, front),
+            (acx + dy, acy + dx, front),
+            (bcx + dy, bcy + dx, front),
         ]))
         unit_cycle_b = tuple(sorted([
             (acx, acy, front),
             (bcx, bcy, front),
-            (acx-dy, acy-dx, front),
-            (bcx-dy, bcy-dx, front),
+            (acx - dy, acy - dx, front),
+            (bcx - dy, bcy - dx, front),
         ]))
         return unit_cycle_a, unit_cycle_b
 
@@ -470,7 +475,7 @@ def make_boundary_cell(boundary_cell, connected_cell, v_front, v_rear, bond_j, c
         return make_edge(c1, c2, v, v)
 
     # variable on opposite side of unit cell from front
-    v_intermediate = (v_front + vars_per_cell//2) % vars_per_cell
+    v_intermediate = (v_front + vars_per_cell // 2) % vars_per_cell
 
     front_clone_edge = make_edge_for_v(boundary_cell, connected_cell, v_front)
     extra_clone_edge = make_edge(boundary_cell, boundary_cell, v_front, v_intermediate)
@@ -503,6 +508,7 @@ def var_num(unit_x, unit_y, var_unit):
 def convert_for_cell(unit_x, unit_y, var_dict):
     def f(x):
         return var_num(unit_x, unit_y, x)
+
     return {(f(x), f(y)): v for (x, y), v in var_dict.items()}
 
 
@@ -556,7 +562,7 @@ def make_configs(all_vars):
 
 
 def energy_of_bonds(bonds, config):
-    return sum(v*config[a]*config[b] for (a, b), v in bonds.items())
+    return sum(v * config[a] * config[b] for (a, b), v in bonds.items())
 
 
 def energy_states(bonds):

@@ -5,6 +5,7 @@ import collections
 
 class GraphAnalyzer:
     """Things about the graph using data from the samples."""
+
     def __init__(self, graph, samples):
         self.graph = graph
         self.samples = samples
@@ -158,10 +159,12 @@ class GraphAnalyzer:
 
     def get_diagonal_dimer_mask(self):
         """List of True/False for each edge whether it is diagonal or not."""
+
         def is_diagonal(vara, varb):
             ax, ay, _ = graphbuilder.get_var_traits(vara, self.graph.vars_per_cell, self.graph.unit_cells_per_row)
             bx, by, _ = graphbuilder.get_var_traits(varb, self.graph.vars_per_cell, self.graph.unit_cells_per_row)
             return ax == bx and ay == by
+
         return [is_diagonal(*edge) for edge in self.graph.sorted_edges]
 
     def get_diagonal_dimer_matrix(self):
@@ -267,7 +270,7 @@ class GraphAnalyzer:
                 dbx, dby = graphbuilder.calculate_variable_direction(varb, vars_per_cell=self.graph.vars_per_cell,
                                                                      unit_cells_per_row=self.graph.unit_cells_per_row)
                 for dx, dy in [(dax, day), (dbx, dby)]:
-                    ox, oy = cx+dx, cy+dy
+                    ox, oy = cx + dx, cy + dy
                     connection = tuple(sorted(((cx, cy, front), (ox, oy, front))))
                     if connection in connection_indices:
                         j = connection_indices[connection]
@@ -342,23 +345,23 @@ def average_by_distance(distance_matrix, values_matrix, binsize=1):
         # Sum and count
         totals = numpy.zeros(num_bins)
         for j in range(num_vars):
-            if valid_distances[i,j]:
-                value = values_matrix[i,j]
-                d = distance_matrix[i,j]
-                d_index = int(numpy.floor(d/binsize))
+            if valid_distances[i, j]:
+                value = values_matrix[i, j]
+                d = distance_matrix[i, j]
+                d_index = int(numpy.floor(d / binsize))
                 totals[d_index] += 1
                 distance_values[i, d_index] += value
         # Average the values
-        distance_values[i,:] = distance_values[i, :] / totals
+        distance_values[i, :] = distance_values[i, :] / totals
         # Calculate variance
         for j in range(num_vars):
             if valid_distances[i, j]:
                 value = values_matrix[i, j]
                 d = distance_matrix[i, j]
                 d_index = int(numpy.floor(d / binsize))
-                distance_stdv[i, d_index] += (value - distance_values[i, d_index])**2
+                distance_stdv[i, d_index] += (value - distance_values[i, d_index]) ** 2
         # Calculate standard deviation from variance
-        distance_stdv[i,:] = numpy.sqrt(distance_stdv[i,:]/totals)
+        distance_stdv[i, :] = numpy.sqrt(distance_stdv[i, :] / totals)
     return distance_values, distance_stdv
 
 
