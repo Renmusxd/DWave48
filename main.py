@@ -396,7 +396,6 @@ def draw_average_unit_cell_directions(filename, graph_analyzer, front=True):
     for vara, varb in graph_analyzer.graph.sorted_edges:
         if graphbuilder.is_front(vara) != front or graphbuilder.is_front(varb) != front:
             continue
-        weight = average_dimers[graph_analyzer.graph.edge_lookup[(vara, varb)]]
         ax, ay, ar = graphbuilder.get_var_traits(vara)
         bx, by, br = graphbuilder.get_var_traits(varb)
         if ax == bx and ay == by:
@@ -405,11 +404,14 @@ def draw_average_unit_cell_directions(filename, graph_analyzer, front=True):
             dbx, dby = graphbuilder.get_var_cartesian(varb)
             dx, dy = (dax + dbx)/2.0 - x, (day + dby)/2.0 - y
 
-            total_weight, (average_x, average_y) = unit_cell_averages[(ax, ay)]
-            new_x = average_x*total_weight + dx*weight
-            new_y = average_y*total_weight + dy*weight
-            new_weight = total_weight + weight
-            unit_cell_averages[(ax, ay)] = (new_weight, (new_x, new_y))
+            weight = average_dimers[graph_analyzer.graph.edge_lookup[(vara, varb)]]
+
+            if weight > 0:
+                total_weight, (average_x, average_y) = unit_cell_averages[(ax, ay)]
+                new_x = average_x + dx*weight
+                new_y = average_y + dy*weight
+                new_weight = total_weight + weight
+                unit_cell_averages[(ax, ay)] = (new_weight, (new_x, new_y))
 
     xs = []
     ys = []
@@ -426,6 +428,7 @@ def draw_average_unit_cell_directions(filename, graph_analyzer, front=True):
 
     pyplot.title("Dimer biases")
     pyplot.quiver(xs, ys, us, vs)
+    pyplot.grid()
     pyplot.gca().invert_yaxis()
     pyplot.savefig(filename)
     pyplot.clf()
@@ -478,20 +481,19 @@ def dwave_sampler_fn():
 
 
 if __name__ == "__main__":
-    experiment_name = "data/monte_carlo_jsweep_annealed_lowt"
-
+    experiment_name = "data/j_sweep"
 
     def experiment_gen(base_dir):
         n = 10
-        for i in range(n):
+        for i in range(1, n):
             print("Running experiment {}".format(i))
             h = 0.0  # float(i) / n
-            j = float(i + 1) / n
+            j = float(i) / n
             experiment_dir = os.path.join(base_dir, "experiment_{}".format(i))
             if not os.path.exists(experiment_dir):
                 os.makedirs(experiment_dir)
             print("\tUsing directory: {}".format(experiment_dir))
-            config = ExperimentConfig(experiment_dir, monte_carlo_sampler_fn, h=h, j=j)
+            config = ExperimentConfig(experiment_dir, dwave_sampler_fn, h=h, j=j)
             config.num_reads = 10000
             config.auto_scale = False
             config.build_graph()
