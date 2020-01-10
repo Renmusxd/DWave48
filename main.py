@@ -196,6 +196,42 @@ class ExperimentConfig:
             pyplot.savefig(os.path.join(self.base_dir, "dimer_correlation_euclidean_distance.svg"))
             pyplot.clf()
 
+            # Similarly, get the correlation plot for the dimers
+            print("\tCalculating diagonal dimer correlations")
+            dimer_corrs, distance_corr, _, __ = graph_analyzer.calculate_diagonal_dimer_correlation_function()
+            distance_corr = numpy.nan_to_num(distance_corr)
+            pyplot.imshow(dimer_corrs, interpolation='nearest')
+            pyplot.colorbar()
+            pyplot.savefig(os.path.join(self.base_dir, "diagonal_dimer_correlations.svg"))
+            pyplot.clf()
+
+            # Now the distance part, with error bars.
+            print("\tCalculating distance correlations")
+            average_corrs = numpy.mean(distance_corr, 0)
+            stdv_corrs = numpy.sqrt(numpy.var(distance_corr, 0))
+            xs = numpy.arange(average_corrs.shape[0])
+            pyplot.errorbar(xs, average_corrs, yerr=stdv_corrs, label="Average")
+            pyplot.legend()
+            pyplot.grid()
+            pyplot.xlabel("Dimer distance (in # edges in dimer-dual)")
+            pyplot.ylabel("Correlation")
+            pyplot.savefig(os.path.join(self.base_dir, "diagonal_dimer_correlation_distance.svg"))
+            pyplot.clf()
+
+            # Now the distance part, with error bars.
+            print("\tCalculating euclidean distance correlations")
+            _, euc_dimer_distance_corr, _, _ = graph_analyzer.calculate_euclidean_diagonal_dimer_correlation_function()
+            average_euc_corrs = numpy.mean(euc_dimer_distance_corr, 0)
+            stdv_euc_corrs = numpy.sqrt(numpy.var(euc_dimer_distance_corr, 0))
+            xs = numpy.arange(average_euc_corrs.shape[0])
+            pyplot.errorbar(xs, average_euc_corrs, yerr=stdv_euc_corrs, label="Average")
+            pyplot.legend()
+            pyplot.grid()
+            pyplot.xlabel("Dimer distance (with edge length=1.0)")
+            pyplot.ylabel("Correlation")
+            pyplot.savefig(os.path.join(self.base_dir, "diagonal_dimer_correlation_euclidean_distance.svg"))
+            pyplot.clf()
+
             # Get the average dimer occupations
             print("\tDrawing dimer occupations")
             average_dimers, stdv_dimers = draw_occupations(os.path.join(self.base_dir, "dimer_occupation_graph.svg"),
@@ -390,7 +426,7 @@ def dwave_sampler_fn():
 
 
 if __name__ == "__main__":
-    experiment_name = "data/j_sweep"
+    experiment_name = "data/monte_carlo_jsweep_annealed_lowt"
 
     def experiment_gen(base_dir):
         n = 10

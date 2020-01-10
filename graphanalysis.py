@@ -9,8 +9,6 @@ class GraphAnalyzer:
         self.graph = graph
         self.samples = samples
 
-        # Memoization for later
-        self.sorted_edges = None
         # From get_flat_samples
         self.var_map = None
         self.var_mat = None
@@ -28,9 +26,13 @@ class GraphAnalyzer:
 
         # from get_dimer_matrix
         self.dimer_matrix = None
+        # and diagonal version
+        self.diagonal_dimer_matrix = None
 
         # from get_dimer_correlations
         self.dimer_correlation = None
+        # and diagonal version
+        self.diagonal_dimer_correlation = None
 
         # from get_dimer_vertex_counts
         self.vertex_counts = None
@@ -39,11 +41,19 @@ class GraphAnalyzer:
         self.dimer_distance_correlations = None
         self.dimer_distance_stdv = None
 
+        # diagonals
+        self.diagonal_dimer_distance_correlations = None
+        self.diagonal_dimer_distance_stdv = None
+
         # from get_defect_correlations
         self.defect_correlations = None
 
         self.defect_euclidean_distance_correlations = None
         self.defect_euclidean_distance_stdv = None
+
+        # diagonals
+        self.diagonal_dimer_euclidean_distance_correlations = None
+        self.diagonal_dimer_euclidean_distance_stdv = None
 
     def get_flat_samples(self):
         if self.var_map is None or self.var_mat is None:
@@ -146,6 +156,67 @@ class GraphAnalyzer:
             self.dimer_euclidean_distance_stdv = distance_stdv
         return dimer_corr, self.dimer_euclidean_distance_correlations, self.dimer_euclidean_distance_stdv, self.graph.all_vars
 
+    def get_diagonal_dimer_mask(self):
+        """List of True/False for each edge whether it is diagonal or not."""
+        def is_diagonal(vara, varb):
+            ax, ay, _ = graphbuilder.get_var_traits(vara, self.graph.vars_per_cell, self.graph.unit_cells_per_row)
+            bx, by, _ = graphbuilder.get_var_traits(varb, self.graph.vars_per_cell, self.graph.unit_cells_per_row)
+            return ax == bx and ay == by
+        return [is_diagonal(*edge) for edge in self.graph.sorted_edges]
+
+    def get_diagonal_dimer_matrix(self):
+        """Same as get_dimer_matrix but only dimers which are across edges within each 4-cell."""
+        if self.diagonal_dimer_matrix is None:
+            diagonal_mask = self.get_diagonal_dimer_mask()
+            dimers = self.get_dimer_matrix()
+            self.diagonal_dimer_matrix = dimers[diagonal_mask, :]
+        return self.diagonal_dimer_matrix
+
+    def get_diagonal_dimer_correlations(self):
+        """
+        Get the correlation of broken bonds (dimers).
+        :param edges: map {(int, int): float} (edges and their couplings)
+        :param samples: list of maps {int: float} for each sample
+        :return: DxD matrix of correlations.
+        """
+        # Get dimers per sample
+        edges_broken = self.get_diagonal_dimer_matrix()
+        if self.diagonal_dimer_correlation is None:
+            # Now get correlations
+            self.diagonal_dimer_correlation = calculate_correlation_matrix(edges_broken)
+        return self.diagonal_dimer_correlation
+
+    def calculate_diagonal_dimer_correlation_function(self):
+        """
+        Calculate correlations as a function of distance for each diagonal dimer.
+        :return: NxN matrix of dimer correlations, NxD matrix of dimer distance correlations, and NxD matrix of
+        standard deviations on the distance correlations, array of N ints which maps index to variable index.
+        """
+        # all_dimer_pairs maps the index in dimer_distances to the index into self.sorted_edges
+        dimer_corr = self.get_diagonal_dimer_correlations()
+        if self.diagonal_dimer_distance_correlations is None or self.diagonal_dimer_distance_stdv is None:
+            diagonal_mask = self.get_diagonal_dimer_mask()
+            diagonal_distances = self.graph.dimer_distance_mat[numpy.ix_(diagonal_mask, diagonal_mask)]
+            distance_corrs, distance_stdv = average_by_distance(diagonal_distances, dimer_corr)
+            self.diagonal_dimer_distance_correlations = distance_corrs
+            self.diagonal_dimer_distance_stdv = distance_stdv
+        return dimer_corr, self.diagonal_dimer_distance_correlations, self.diagonal_dimer_distance_stdv, self.graph.all_dimer_pairs
+
+    def calculate_euclidean_diagonal_dimer_correlation_function(self):
+        """
+        Calculate correlations as a function of distance for each diagonal dimer.
+        :return: NxN matrix of dimer correlations, NxD matrix of dimer distance correlations, and NxD matrix of
+        standard deviations on the distance correlations, array of N ints which maps index to variable index.
+        """
+        dimer_corr = self.get_diagonal_dimer_correlations()
+        if self.diagonal_dimer_euclidean_distance_correlations is None or self.diagonal_dimer_euclidean_distance_stdv is None:
+            diagonal_mask = self.get_diagonal_dimer_mask()
+            diagonal_distances = self.graph.dimer_distance_mat[numpy.ix_(diagonal_mask, diagonal_mask)]
+            distance_corrs, distance_stdv = average_by_distance(diagonal_distances, dimer_corr)
+            self.diagonal_dimer_euclidean_distance_correlations = distance_corrs
+            self.diagonal_dimer_euclidean_distance_stdv = distance_stdv
+        return dimer_corr, self.diagonal_dimer_euclidean_distance_correlations, self.diagonal_dimer_euclidean_distance_stdv, self.graph.all_vars
+
     def get_dimer_vertex_counts(self):
         if self.vertex_counts is None:
             # Get dimers per sample
@@ -239,8 +310,6 @@ class GraphAnalyzer:
         return defect_corr, self.defect_euclidean_distance_correlations, self.defect_euclidean_distance_stdv, self.graph.dimer_vertex_list
 
 
-
-
 def get_variable_orientation(var_a, var_b):
     """Returns 0 for vertical, +-1 for diagonal, None for unexpected."""
     dx_a, dy_a = graphbuilder.calculate_variable_direction(var_a)
@@ -257,7 +326,7 @@ def get_variable_orientation(var_a, var_b):
 
 def average_by_distance(distance_matrix, values_matrix, binsize=1):
     """
-    TODO
+
     :param distance_matrix: NxN matrix of scalar distances.
     :param values_matrix: NxN matrix of scalar values.
     :param binsize: size of bins for output
@@ -292,6 +361,7 @@ def average_by_distance(distance_matrix, values_matrix, binsize=1):
         distance_stdv[i,:] = numpy.sqrt(distance_stdv[i,:]/totals)
     return distance_values, distance_stdv
 
+
 def flatten_dicts(samples):
     """
     Flattens a list of dicts into a mapping and a list
@@ -315,6 +385,9 @@ def calculate_correlation_matrix(variable_values):
     :return: nxn matrix of the cosine similarities
     """
     variable_values = variable_values * 1.0
+    # Subtract mean
+    mean_per_var = numpy.mean(variable_values, axis=-1)
+    variable_values = variable_values - numpy.expand_dims(mean_per_var, axis=-1)
     m = numpy.matmul(variable_values, variable_values.T)
     v_sqr = numpy.square(variable_values)
     v_norm_sqr = numpy.sum(v_sqr, -1)
