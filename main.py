@@ -237,6 +237,10 @@ class ExperimentConfig:
             print("\tDrawing dimer occupations")
             average_dimers, stdv_dimers = draw_occupations(os.path.join(self.base_dir, "dimer_occupation_graph.svg"),
                                                            self.graph.edges, graph_analyzer)
+            average_dimers, stdv_dimers = draw_occupations(os.path.join(self.base_dir, "dimer_occupation_graph_scaled.svg"),
+                                                           self.graph.edges, graph_analyzer, scale=True)
+            draw_average_unit_cell_directions(os.path.join(self.base_dir, "dimer_biases.svg"), graph_analyzer)
+
             # Sort them
             average_dimers, stdv_dimers = zip(*sorted(zip(average_dimers, stdv_dimers), key=lambda x: x[0]))
             average_dimers = numpy.asarray(average_dimers)
@@ -356,10 +360,16 @@ def draw_dimers(filename, graph, sample, front=True, color_on_orientation=True):
                 w.write(svg)
 
 
-def draw_occupations(filename, edges, graph_analyzer, front=True):
+def draw_occupations(filename, edges, graph_analyzer, front=True, scale=False):
     dimer_matrix = graph_analyzer.get_dimer_matrix()
     average_dimers = numpy.mean(dimer_matrix == 1, -1)
     stdv_dimers = numpy.var(dimer_matrix == 1, -1)
+
+    if scale:
+        min_dimer = numpy.min(average_dimers)
+        max_dimer = numpy.max(average_dimers)
+        dimer_range = max_dimer - min_dimer
+        average_dimers = (average_dimers - min_dimer)/dimer_range
 
     # Basic color scheme
     def dimer_color_fn(var_a, var_b):
@@ -377,6 +387,48 @@ def draw_occupations(filename, edges, graph_analyzer, front=True):
 
     return average_dimers, stdv_dimers
 
+
+def draw_average_unit_cell_directions(filename, graph_analyzer, front=True):
+    # TODO debug this thing
+    dimer_matrix = graph_analyzer.get_dimer_matrix()
+    average_dimers = numpy.mean(dimer_matrix == 1, -1)
+    unit_cell_averages = collections.defaultdict(lambda: (0.0, (0.0, 0.0)))
+    for vara, varb in graph_analyzer.graph.sorted_edges:
+        if graphbuilder.is_front(vara) != front or graphbuilder.is_front(varb) != front:
+            continue
+        weight = average_dimers[graph_analyzer.graph.edge_lookup[(vara, varb)]]
+        ax, ay, ar = graphbuilder.get_var_traits(vara)
+        bx, by, br = graphbuilder.get_var_traits(varb)
+        if ax == bx and ay == by:
+            x, y = graphbuilder.get_unit_cell_cartesian(ax, ay)
+            dax, day = graphbuilder.get_var_cartesian(vara)
+            dbx, dby = graphbuilder.get_var_cartesian(varb)
+            dx, dy = (dax + dbx)/2.0 - x, (day + dby)/2.0 - y
+
+            total_weight, (average_x, average_y) = unit_cell_averages[(ax, ay)]
+            new_x = average_x*total_weight + dx*weight
+            new_y = average_y*total_weight + dy*weight
+            new_weight = total_weight + weight
+            unit_cell_averages[(ax, ay)] = (new_weight, (new_x, new_y))
+
+    xs = []
+    ys = []
+    us = []
+    vs = []
+    for (cx, cy), (weight, (dx, dy)) in unit_cell_averages.items():
+        x, y = graphbuilder.get_unit_cell_cartesian(cx, cy)
+        xs.append(x)
+        ys.append(y)
+        us.append(dx / weight)
+        # Note the minus sign, this is because we are inverting the y axis
+        # and quiver only inverts the start positions of arrows, not the relative end.
+        vs.append(-dy / weight)
+
+    pyplot.title("Dimer biases")
+    pyplot.quiver(xs, ys, us, vs)
+    pyplot.gca().invert_yaxis()
+    pyplot.savefig(filename)
+    pyplot.clf()
 
 def draw_flippable_states(filename, graph, sample, front=True):
     def flippable_color_fn(edge_a, edge_b):
@@ -439,7 +491,7 @@ if __name__ == "__main__":
             if not os.path.exists(experiment_dir):
                 os.makedirs(experiment_dir)
             print("\tUsing directory: {}".format(experiment_dir))
-            config = ExperimentConfig(experiment_dir, dwave_sampler_fn, h=h, j=j)
+            config = ExperimentConfig(experiment_dir, monte_carlo_sampler_fn, h=h, j=j)
             config.num_reads = 10000
             config.auto_scale = False
             config.build_graph()

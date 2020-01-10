@@ -209,5 +209,6 @@ if __name__ == "__main__":
         pyplot.title("Config: {}".format(config))
         pyplot.plot(all_xs, all_ys, 'o')
         pyplot.plot(som_xs, som_ys, 'o')
+        pyplot.gca().invert_yaxis()
         pyplot.savefig('lanl_drawings/{}.png'.format(i))
         pyplot.clf()

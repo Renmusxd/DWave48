@@ -390,7 +390,7 @@ def get_var_cartesian(index, vars_per_cell=8, unit_cells_per_row=16, inner_edge_
     unit_x, unit_y, rel_indx = get_var_traits(index, vars_per_cell=vars_per_cell, unit_cells_per_row=unit_cells_per_row)
     # sqrt(d^2 + d^2)/2 = sqrt(2 d^2)/2 = sqrt(d^2 / 2) = d/sqrt(2)
     unit_cell_radius = inner_edge_d / numpy.sqrt(2)
-    cx, cy = get_unit_cell_cartesian(unit_x, unit_y, inner_edge_d=vars_per_cell, output_edge_d=output_edge_d)
+    cx, cy = get_unit_cell_cartesian(unit_x, unit_y, inner_edge_d=inner_edge_d, output_edge_d=output_edge_d)
     dx, dy = relative_pos_of_relative_index(rel_indx, unit_cell_radius)
     if not is_type_a(unit_x, unit_y):
         dx = -dx
