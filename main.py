@@ -239,7 +239,8 @@ class ExperimentConfig:
                                                            self.graph.edges, graph_analyzer)
             average_dimers, stdv_dimers = draw_occupations(os.path.join(self.base_dir, "dimer_occupation_graph_scaled.svg"),
                                                            self.graph.edges, graph_analyzer, scale=True)
-            draw_average_unit_cell_directions(os.path.join(self.base_dir, "dimer_biases.svg"), graph_analyzer)
+            divergence = draw_average_unit_cell_directions(os.path.join(self.base_dir, "dimer_biases.svg"),
+                                                           graph_analyzer)
 
             # Sort them
             average_dimers, stdv_dimers = zip(*sorted(zip(average_dimers, stdv_dimers), key=lambda x: x[0]))
@@ -298,14 +299,15 @@ class ExperimentConfig:
             defects = (average_defects, stdv_defects)
             flippables = (flippable_count, flippable_stdv)
             print("\tDone!")
-            return ExperimentResults(self.base_dir, defects, flippables, self.j, self.h)
+            return ExperimentResults(self.base_dir, defects, flippables, divergence, self.j, self.h)
 
 
 class ExperimentResults:
-    def __init__(self, filepath, defects, flippables, j, h):
+    def __init__(self, filepath, defects, flippables, unit_cell_divergence, j, h):
         self.filepath = filepath
         self.defects = defects
         self.flippables = flippables
+        self.unit_cell_divergence = unit_cell_divergence
         self.j = j
         self.h = h
 
@@ -315,6 +317,7 @@ class ExperimentResults:
             "defect_stdv": self.defects[1],
             "flippable_count": self.flippables[0],
             "flippable_stdv": self.flippables[1],
+            "unit_cell_divergence": self.unit_cell_divergence,
             "j": self.j,
             "inv_j": 1.0 / self.j,
             "h": self.h
@@ -389,7 +392,6 @@ def draw_occupations(filename, edges, graph_analyzer, front=True, scale=False):
 
 
 def draw_average_unit_cell_directions(filename, graph_analyzer, front=True):
-    # TODO debug this thing
     dimer_matrix = graph_analyzer.get_dimer_matrix()
     average_dimers = numpy.mean(dimer_matrix == 1, -1)
     unit_cell_averages = collections.defaultdict(lambda: (0.0, (0.0, 0.0)))
@@ -432,6 +434,24 @@ def draw_average_unit_cell_directions(filename, graph_analyzer, front=True):
     pyplot.gca().invert_yaxis()
     pyplot.savefig(filename)
     pyplot.clf()
+
+    # Calculate divergence along boundary
+    min_x = min(cx for (cx, _), _ in unit_cell_averages.items())
+    max_x = max(cx for (cx, _), _ in unit_cell_averages.items())
+    min_y = min(cy for (_, cy), _ in unit_cell_averages.items())
+    max_y = max(cy for (_, cy), _ in unit_cell_averages.items())
+
+    divergence = 0.0
+    for (cx, cy), (weight, (dx, dy)) in unit_cell_averages.items():
+        if cx == min_x:
+            divergence -= dx/weight
+        elif cx == max_x:
+            divergence += dx/weight
+        if cy == min_y:
+            divergence -= dy / weight
+        elif cy == max_y:
+            divergence += dy / weight
+    return divergence
 
 def draw_flippable_states(filename, graph, sample, front=True):
     def flippable_color_fn(edge_a, edge_b):
@@ -493,7 +513,7 @@ if __name__ == "__main__":
             if not os.path.exists(experiment_dir):
                 os.makedirs(experiment_dir)
             print("\tUsing directory: {}".format(experiment_dir))
-            config = ExperimentConfig(experiment_dir, dwave_sampler_fn, h=h, j=j)
+            config = ExperimentConfig(experiment_dir, monte_carlo_sampler_fn, h=h, j=j)
             config.num_reads = 10000
             config.auto_scale = False
             config.build_graph()
@@ -537,6 +557,16 @@ if __name__ == "__main__":
         pyplot.savefig(os.path.join(experiment_name, 'flippable_vs_hs.svg'))
         pyplot.clf()
 
+    def unit_cell_divergence_plot(scalars):
+        inv_j = scalars['inv_j']
+        divergence = scalars['unit_cell_divergence']
+        hs = scalars['h']
+
+        pyplot.plot(inv_j, divergence)
+        pyplot.xlabel('1/J')
+        pyplot.ylabel('Boundary Divergence')
+        pyplot.savefig(os.path.join(experiment_name, 'divergence_vs_inv_j.svg'))
+        pyplot.clf()
 
     run_experiment_sweep(experiment_name, experiment_gen(experiment_name),
-                         plot_functions=[defect_plot, flippable_plot])
+                         plot_functions=[defect_plot, flippable_plot, unit_cell_divergence_plot])

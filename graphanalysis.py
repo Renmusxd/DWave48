@@ -167,6 +167,12 @@ class GraphAnalyzer:
 
         return [is_diagonal(*edge) for edge in self.graph.sorted_edges]
 
+    def get_nesw_dimer_mask(self):
+        return [get_variable_orientation(*edge) == -1 for edge in self.graph.sorted_edges]
+
+    def get_nwse_dimer_mask(self):
+        return [get_variable_orientation(*edge) == 1 for edge in self.graph.sorted_edges]
+
     def get_diagonal_dimer_matrix(self):
         """Same as get_dimer_matrix but only dimers which are across edges within each 4-cell."""
         if self.diagonal_dimer_matrix is None:
@@ -381,7 +387,7 @@ def flatten_dicts(samples):
     return keys, values
 
 
-def calculate_correlation_matrix(variable_values):
+def calculate_correlation_matrix(variable_values, other_variables=None):
     """
     Calculates the cosine similarity between each set of variables over time.
     :param variable_values: nxd matrix of n variables and their values across d runs.
