@@ -31,15 +31,15 @@ def get_var_pos(index, vars_per_cell=8, unit_cells_per_row=16, dist=10):
     return x + dx, y + dy
 
 
-def make_edges_svg(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, color_fn=None, front=True):
+def make_edges_svg(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, color_fn=None, front=True, var_color_fn=None):
     contents, _ = make_edges_contents(edges, unit_cells_per_row=unit_cells_per_row, vars_per_cell=vars_per_cell,
-                                      dist=dist, color_fn=color_fn, front=front)
+                                      dist=dist, color_fn=color_fn, front=front, var_color_fn=var_color_fn)
     if contents:
         return wrap_with_svg(contents)
     return None
 
 
-def make_edges_contents(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, color_fn=None, front=True):
+def make_edges_contents(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, color_fn=None, front=True, var_color_fn=None):
     def default_color_fn(_, __):
         return "rgb(0,0,0)"
 
@@ -47,6 +47,7 @@ def make_edges_contents(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, c
         color_fn = default_color_fn
 
     debug_details_values = []
+    point_draw_values = []
     to_draw_values = []
     normalize = get_normalization(edges, unit_cells_per_row=unit_cells_per_row, vars_per_cell=vars_per_cell,
                                   dist=dist, front=front)
@@ -61,6 +62,9 @@ def make_edges_contents(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, c
 
         debug_details_values.append((a_cell_x, a_cell_y, b_cell_x, b_cell_y, rel_var_a, rel_var_b, var_a, var_b))
         to_draw_values.append((x1, y1, x2, y2, color_fn(var_a, var_b)))
+        if var_color_fn:
+            point_draw_values.append((x1, y1, var_color_fn(var_a)))
+            point_draw_values.append((x2, y2, var_color_fn(var_b)))
 
     output = io.StringIO()
     for to_draw, to_detail in zip(to_draw_values, debug_details_values):
@@ -78,6 +82,10 @@ def make_edges_contents(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, c
             '<line x1="{}" y1="{}" x2="{}" y2="{}" style="stroke:{};stroke-width:0.01"><title>{}</title></line>\n'.format(
                 x1, y1, x2, y2, color, title_text
             ))
+    for x, y, c in point_draw_values:
+        x, y = normalize(x, y)
+        output.write('<circle cx="{}" cy="{}" r="0.01" fill="{}"/>'.format(x, y, c))
+
     return output.getvalue(), normalize
 
 
@@ -210,7 +218,7 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
 
 def make_dimer_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dist=5,
                    edge_color="gray", dimer_edge_color_fn=None,
-                   dimer_color_fn=None, front=True, flippable_color_fn=None):
+                   dimer_color_fn=None, front=True, flippable_color_fn=None, var_color_fn=None):
     def all_edge_color(_, __):
         return edge_color
 
@@ -224,7 +232,8 @@ def make_dimer_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dist=5,
                     if not graphanalysis.edge_is_satisfied(var_vals, js, edge[0], edge[1])]
     background_edges_contents, normalize = make_edges_contents(edges, unit_cells_per_row=unit_cells_per_row,
                                                                vars_per_cell=vars_per_cell, dist=dist,
-                                                               color_fn=all_edge_color, front=front)
+                                                               color_fn=all_edge_color, front=front,
+                                                               var_color_fn=var_color_fn)
     if background_edges_contents:
         background_dimer_contents = make_dimer_contents(edges, normalize, unit_cells_per_row=unit_cells_per_row,
                                                         vars_per_cell=vars_per_cell, dist=dist,

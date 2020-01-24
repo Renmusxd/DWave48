@@ -9,6 +9,8 @@ import collections
 from matplotlib import pyplot
 import numpy
 
+from mocksampler import MockSampler
+
 
 class ExperimentConfig:
     def __init__(self, base_dir, sampler_fn, machine_temp=14.5e-3, h=0.0, j=1.0):
@@ -75,13 +77,13 @@ class ExperimentConfig:
                                                       num_reads=self.num_reads,
                                                       auto_scale=self.auto_scale)
 
-            self.data = [({k: sample[k] for k in sample}, energy, num_occurences) for sample, energy, num_occurences in
-                         response.data()]
+            self.data = [({k: sample[k] for k in sample}, energy, num_occurences)
+                         for sample, energy, num_occurences in response.data()]
             print("done!")
             self.save_self(filepath)
 
     def analyze(self):
-        print("\tRunning analysis...")
+        print("Running analysis on {}".format(self.base_dir))
 
         def color_by_sign(var_a, var_b):
             if self.graph.edges[(var_a, var_b)] < 0:
@@ -116,6 +118,7 @@ class ExperimentConfig:
             print("\tDrawing dimer svgs")
             lowest_e = numpy.argmin(energies)
             sample, energy, num_occurrences = self.data[lowest_e]
+
             draw_dimers(os.path.join(self.base_dir, "front_min_energy_dimers.svg"), self.graph.edges, sample,
                         front=True, color_on_orientation=False)
             draw_dimers(os.path.join(self.base_dir, "front_min_energy_dimers_color.svg"), self.graph.edges, sample,
@@ -233,6 +236,21 @@ class ExperimentConfig:
             pyplot.savefig(os.path.join(self.base_dir, "diagonal_dimer_correlation_euclidean_distance.svg"))
             pyplot.clf()
 
+            print("\tCalculating oriented dimer correlations")
+            corrs, _ = graph_analyzer.calculate_oriented_dimer_correlation_function()
+            names = ["nesw-nesw", "nesw-nwse", "nwse-nesw", "nwse-nwse"]
+            for name, corr in zip(names, corrs):
+                average_corr = numpy.mean(corr, 0)
+                stdv_corr = numpy.sqrt(numpy.var(corr, 0))
+                xs = numpy.arange(average_corr.shape[0])
+                pyplot.errorbar(xs, average_corr, yerr=stdv_corr, label="Average")
+                pyplot.legend()
+                pyplot.grid()
+                pyplot.xlabel("Dimer distance (with edge length=1.0)")
+                pyplot.ylabel("Correlation")
+                pyplot.savefig(os.path.join(self.base_dir, "{}_euclidean_correlations.svg".format(name)))
+                pyplot.clf()
+
             # Get the average dimer occupations
             print("\tDrawing dimer occupations")
             average_dimers, stdv_dimers = draw_occupations(os.path.join(self.base_dir, "dimer_occupation_graph.svg"),
@@ -274,6 +292,11 @@ class ExperimentConfig:
             total_defects_per_sample = numpy.sum(defects, 0)
             average_defects = numpy.mean(total_defects_per_sample, -1)
             stdv_defects = numpy.sqrt(numpy.var(total_defects_per_sample, -1))
+
+            print("\tDefect histograms")
+            pyplot.hist(total_defects_per_sample, bins=numpy.arange(0, numpy.max(total_defects_per_sample)))
+            pyplot.savefig(os.path.join(self.base_dir, "defect_histogram.svg"))
+            pyplot.clf()
 
             # Get defect correlations
             print("\tDefect correlations")
@@ -348,16 +371,16 @@ def color_on_orientation_fn(var_a, var_b):
     return "purple"
 
 
-def draw_dimers(filename, graph, sample, front=True, color_on_orientation=True):
+def draw_dimers(filename, graph, sample, front=True, color_on_orientation=True, var_color_fn=None):
     if not color_on_orientation:
         # Basic color scheme
-        svg = graphdrawing.make_dimer_svg(graph, sample, front=front)
+        svg = graphdrawing.make_dimer_svg(graph, sample, front=front, var_color_fn=var_color_fn)
         if svg:
             with open(filename, "w") as w:
                 w.write(svg)
     else:
         # Orientation color scheme
-        svg = graphdrawing.make_dimer_svg(graph, sample, front=front, dimer_color_fn=color_on_orientation_fn)
+        svg = graphdrawing.make_dimer_svg(graph, sample, front=front, dimer_color_fn=color_on_orientation_fn, var_color_fn=var_color_fn)
         if svg:
             with open(filename, "w") as w:
                 w.write(svg)
@@ -372,6 +395,8 @@ def draw_occupations(filename, edges, graph_analyzer, front=True, scale=False):
         min_dimer = numpy.min(average_dimers)
         max_dimer = numpy.max(average_dimers)
         dimer_range = max_dimer - min_dimer
+        if dimer_range == 0:
+            dimer_range = 1
         average_dimers = (average_dimers - min_dimer)/dimer_range
 
     # Basic color scheme
@@ -470,10 +495,25 @@ def draw_flippable_states(filename, graph, sample, front=True):
 
 
 def run_experiment_sweep(base_directory, experiment_gen, plot_functions=None):
-    if not os.path.exists(base_directory):
+    configs = None
+    pickle_path = os.path.join(base_directory, "configs.pickle")
+    if os.path.exists(base_directory):
+        if os.path.exists(pickle_path):
+            print("Attempting to load experiment configurations from disk")
+            with open(pickle_path, "rb") as f:
+                configs = pickle.load(f)
+                print("\tDone!")
+    else:
         os.makedirs(base_directory)
+    if configs is None:
+        configs = [config for config in experiment_gen]
+        print("Attempting to save experiment configurations to disk")
+        with open(pickle_path, "wb") as w:
+            pickle.dump(configs, w)
+            print("\tDone!")
+
     scalars = collections.defaultdict(list)
-    for i, experiment in enumerate(experiment_gen):
+    for i, experiment in enumerate(configs):
         experiment.run_or_load_experiment()
         results = experiment.analyze()
         for k, v in results.get_named_scalars().items():
@@ -500,13 +540,17 @@ def dwave_sampler_fn():
     return DWaveSampler()
 
 
+def staggered_sampler_fn():
+    return MockSampler()
+
+
 if __name__ == "__main__":
-    experiment_name = "data/j_sweep"
+    experiment_name = "data/lanl_montecarlo_jsweep"
 
     def experiment_gen(base_dir):
         n = 10
         for i in range(1, n):
-            print("Running experiment {}".format(i))
+            print("Building experiment {}".format(i))
             h = 0.0  # float(i) / n
             j = float(i) / n
             experiment_dir = os.path.join(base_dir, "experiment_{}".format(i))
@@ -514,9 +558,9 @@ if __name__ == "__main__":
                 os.makedirs(experiment_dir)
             print("\tUsing directory: {}".format(experiment_dir))
             config = ExperimentConfig(experiment_dir, monte_carlo_sampler_fn, h=h, j=j)
-            config.num_reads = 10000
+            config.num_reads = 1000
             config.auto_scale = False
-            config.build_graph()
+            config.build_graph(min_x=7, max_x=16, min_y=0, max_y=8)
             yield config
 
 

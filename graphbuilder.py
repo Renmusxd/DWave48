@@ -5,15 +5,6 @@ import pickle
 import os
 
 
-class MockSample:
-    def __getitem__(self, index):
-        if index == 5:
-            return 0
-        if index == 13:
-            return 1
-        return 0
-
-
 def get_connection_cells():
     """Gives direction in terms of A to B"""
     return {

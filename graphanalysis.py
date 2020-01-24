@@ -181,6 +181,22 @@ class GraphAnalyzer:
             self.diagonal_dimer_matrix = dimers[diagonal_mask, :]
         return self.diagonal_dimer_matrix
 
+    def get_nesw_dimer_matrix(self):
+        """Same as get_dimer_matrix but only dimers which are ne-sw edges within each 4-cell."""
+        if self.nesw_dimer_matrix is None:
+            mask = self.get_nesw_dimer_mask()
+            dimers = self.get_dimer_matrix()
+            self.nesw_dimer_matrix = dimers[mask, :]
+        return self.nesw_dimer_matrix
+
+    def get_nwse_dimer_matrix(self):
+        """Same as get_dimer_matrix but only dimers which are nw-se edges within each 4-cell."""
+        if self.nwse_dimer_matrix is None:
+            mask = self.get_nwse_dimer_mask()
+            dimers = self.get_dimer_matrix()
+            self.nwse_dimer_matrix = dimers[mask, :]
+        return self.nwse_dimer_matrix
+
     def get_diagonal_dimer_correlations(self):
         """
         Get the correlation of broken bonds (dimers).
@@ -220,11 +236,43 @@ class GraphAnalyzer:
         dimer_corr = self.get_diagonal_dimer_correlations()
         if self.diagonal_dimer_euclidean_distance_correlations is None or self.diagonal_dimer_euclidean_distance_stdv is None:
             diagonal_mask = self.get_diagonal_dimer_mask()
-            diagonal_distances = self.graph.dimer_distance_mat[numpy.ix_(diagonal_mask, diagonal_mask)]
+            diagonal_distances = self.graph.dimer_euclidean_distances[numpy.ix_(diagonal_mask, diagonal_mask)]
             distance_corrs, distance_stdv = average_by_distance(diagonal_distances, dimer_corr)
             self.diagonal_dimer_euclidean_distance_correlations = distance_corrs
             self.diagonal_dimer_euclidean_distance_stdv = distance_stdv
         return dimer_corr, self.diagonal_dimer_euclidean_distance_correlations, self.diagonal_dimer_euclidean_distance_stdv, self.graph.all_vars
+
+    def calculate_oriented_dimer_correlation_function(self):
+        """Get correlations between specific orientations of dimers."""
+        nesw_mask = self.get_nesw_dimer_mask()
+        nwse_mask = self.get_nwse_dimer_mask()
+        correlations = self.get_dimer_correlations()
+        masks = [(nesw_mask, nesw_mask), (nesw_mask, nwse_mask), (nwse_mask, nesw_mask), (nwse_mask, nwse_mask)]
+        corrs = []
+        stdvs = []
+        for mask_a, mask_b in masks:
+            sub_corrs = correlations[numpy.ix_(mask_a, mask_b)]
+            sub_distances = self.graph.dimer_distance_mat[numpy.ix_(mask_a, mask_b)]
+            sub_corrs, sub_stdv = average_by_distance(sub_distances, sub_corrs)
+            corrs.append(sub_corrs)
+            stdvs.append(sub_stdv)
+        return corrs, stdvs
+
+    def calculate_euclidean_oriented_dimer_correlation_function(self):
+        """Get correlations between specific orientations of dimers."""
+        nesw_mask = self.get_nesw_dimer_mask()
+        nwse_mask = self.get_nwse_dimer_mask()
+        correlations = self.get_dimer_correlations()
+        masks = [(nesw_mask, nesw_mask), (nesw_mask, nwse_mask), (nwse_mask, nesw_mask), (nwse_mask, nwse_mask)]
+        corrs = []
+        stdvs = []
+        for mask_a, mask_b in masks:
+            sub_corrs = correlations[numpy.ix_(mask_a, mask_b)]
+            sub_distances = self.graph.dimer_euclidean_distances[numpy.ix_(mask_a, mask_b)]
+            sub_corrs, sub_stdv = average_by_distance(sub_distances, sub_corrs)
+            corrs.append(sub_corrs)
+            stdvs.append(sub_stdv)
+        return corrs, stdvs
 
     def get_dimer_vertex_counts(self):
         if self.vertex_counts is None:
@@ -318,6 +366,15 @@ class GraphAnalyzer:
             self.defect_euclidean_distance_stdv = distance_stdv
         return defect_corr, self.defect_euclidean_distance_correlations, self.defect_euclidean_distance_stdv, self.graph.dimer_vertex_list
 
+    def get_heightmaps(self):
+
+        # Make a matrix from diagonal edges to vertices
+        diagonal_edges = [edge for edge, is_diagonal in zip(self.graph.sorted_edges, self.get_diagonal_dimer_mask())
+                          if is_diagonal]
+        diagonals = self.get_diagonal_dimer_matrix()
+
+        # TODO fill this out.
+        pass
 
 def get_variable_orientation(var_a, var_b):
     """Returns 0 for vertical, +-1 for diagonal, None for unexpected."""
@@ -391,17 +448,32 @@ def calculate_correlation_matrix(variable_values, other_variables=None):
     """
     Calculates the cosine similarity between each set of variables over time.
     :param variable_values: nxd matrix of n variables and their values across d runs.
-    :return: nxn matrix of the cosine similarities
+    :param other_variables: mxd matrix of m variables and their values across d runs (defaults to variable_values).
+    :return: nxm matrix of the cosine similarities
     """
     variable_values = variable_values * 1.0
     # Subtract mean
     mean_per_var = numpy.mean(variable_values, axis=-1)
     variable_values = variable_values - numpy.expand_dims(mean_per_var, axis=-1)
-    m = numpy.matmul(variable_values, variable_values.T)
+
+    if other_variables is None:
+        other_variables = variable_values
+    else:
+        mean_per_var = numpy.mean(other_variables, axis=-1)
+        other_variables = other_variables - numpy.expand_dims(mean_per_var, axis=-1)
+
+    # Correlations
+    m = numpy.matmul(variable_values, other_variables.T)
+
     v_sqr = numpy.square(variable_values)
     v_norm_sqr = numpy.sum(v_sqr, -1)
     v_norms = numpy.sqrt(v_norm_sqr)
-    norm_mat = numpy.outer(v_norms, v_norms)
+
+    v_sqr = numpy.square(other_variables)
+    v_norm_sqr = numpy.sum(v_sqr, -1)
+    other_norms = numpy.sqrt(v_norm_sqr)
+
+    norm_mat = numpy.outer(v_norms, other_norms)
     norm_m = m / norm_mat
     return norm_m
 
