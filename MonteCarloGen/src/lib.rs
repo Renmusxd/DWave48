@@ -10,16 +10,14 @@ fn run_monte_carlo(
     num_experiments: u64,
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
-    only_basic_moves: Option<bool>
+    only_basic_moves: Option<bool>,
 ) -> Vec<(f64, Vec<bool>)> {
     let only_basic_moves = only_basic_moves.unwrap_or(false);
     (0..num_experiments)
         .into_par_iter()
         .map(|_| {
             let mut gs = GraphState::new(&edges, &biases);
-            (0..timesteps).for_each(|_| {
-                gs.do_time_step(beta, only_basic_moves).unwrap()
-            });
+            (0..timesteps).for_each(|_| gs.do_time_step(beta, only_basic_moves).unwrap());
             let e = gs.get_energy();
             (e, gs.get_state())
         })
@@ -33,7 +31,7 @@ fn run_monte_carlo_annealing(
     num_experiments: u64,
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
-    only_basic_moves: Option<bool>
+    only_basic_moves: Option<bool>,
 ) -> Vec<(f64, Vec<bool>)> {
     let only_basic_moves = only_basic_moves.unwrap_or(false);
     betas.sort_by_key(|(i, _)| *i);
@@ -72,7 +70,6 @@ fn run_monte_carlo_annealing(
         .collect()
 }
 
-
 #[pyfunction]
 fn run_monte_carlo_annealing_and_get_energies(
     mut betas: Vec<(usize, f64)>,
@@ -80,7 +77,7 @@ fn run_monte_carlo_annealing_and_get_energies(
     num_experiments: u64,
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
-    only_basic_moves: Option<bool>
+    only_basic_moves: Option<bool>,
 ) -> Vec<f64> {
     let only_basic_moves = only_basic_moves.unwrap_or(false);
     betas.sort_by_key(|(i, _)| *i);
@@ -105,34 +102,43 @@ fn run_monte_carlo_annealing_and_get_energies(
             let mut gs = GraphState::new(&edges, &biases);
             let mut beta_index = 0;
 
-            (0 .. timesteps).map(|_| {
-                while i > betas[beta_index + 1].0 {
-                    beta_index += 1;
-                }
-                let (ia, va) = betas[beta_index];
-                let (ib, vb) = betas[beta_index + 1];
-                let beta = (vb - va) * ((i - ia) as f64 / (ib - ia) as f64) + va;
-                gs.do_time_step(beta, only_basic_moves).unwrap();
-                gs.get_energy()
-            }).collect()
+            (0..timesteps)
+                .map(|_| {
+                    while i > betas[beta_index + 1].0 {
+                        beta_index += 1;
+                    }
+                    let (ia, va) = betas[beta_index];
+                    let (ib, vb) = betas[beta_index + 1];
+                    let beta = (vb - va) * ((i - ia) as f64 / (ib - ia) as f64) + va;
+                    gs.do_time_step(beta, only_basic_moves).unwrap();
+                    gs.get_energy()
+                })
+                .collect()
         })
-        .map(|v| Some(v))
-        .reduce(|| None, |acc: Option<Vec<f64>>, v: Option<Vec<f64>>| -> Option<Vec<f64>> {
-            match acc {
-                None => v,
-                Some(acc) => {
-                    Some(acc.into_iter().zip(v.unwrap().into_iter()).map(|(a, b)| {
-                        a + b
-                    }).collect())
+        .map(Some)
+        .reduce(
+            || None,
+            |acc: Option<Vec<f64>>, v: Option<Vec<f64>>| -> Option<Vec<f64>> {
+                match acc {
+                    None => v,
+                    Some(acc) => Some(
+                        acc.into_iter()
+                            .zip(v.unwrap().into_iter())
+                            .map(|(a, b)| a + b)
+                            .collect(),
+                    ),
                 }
-            }
-        }).unwrap()
+            },
+        )
+        .unwrap()
 }
 
 #[pymodule]
 fn monte_carlo(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(pyo3::wrap_pyfunction!(run_monte_carlo))?;
     m.add_wrapped(pyo3::wrap_pyfunction!(run_monte_carlo_annealing))?;
-    m.add_wrapped(pyo3::wrap_pyfunction!(run_monte_carlo_annealing_and_get_energies))?;
+    m.add_wrapped(pyo3::wrap_pyfunction!(
+        run_monte_carlo_annealing_and_get_energies
+    ))?;
     Ok(())
 }

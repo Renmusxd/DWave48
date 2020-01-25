@@ -132,7 +132,11 @@ impl GraphState {
         let mut rng = rand::thread_rng();
         // Energy cost of this flip
         if let Some(mut spin_state) = self.state.take() {
-            let choice = if only_basic_moves { 0 } else { rng.gen_range(0, 2) };
+            let choice = if only_basic_moves {
+                0
+            } else {
+                rng.gen_range(0, 2)
+            };
             match choice {
                 0 => Self::do_spin_flip(
                     &mut rng,
