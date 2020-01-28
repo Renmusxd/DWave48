@@ -1,6 +1,5 @@
 import numpy
 import graphbuilder
-import collections
 
 
 class GraphAnalyzer:
@@ -45,6 +44,9 @@ class GraphAnalyzer:
         # diagonals
         self.diagonal_dimer_distance_correlations = None
         self.diagonal_dimer_distance_stdv = None
+
+        self.nesw_dimer_matrix = None
+        self.nwse_dimer_matrix = None
 
         # from get_defect_correlations
         self.defect_correlations = None
@@ -385,8 +387,6 @@ class GraphAnalyzer:
         diagonals = self.get_diagonal_dimer_matrix()
 
 
-
-
         # TODO fill this out.
         pass
 
@@ -429,6 +429,8 @@ def average_by_distance(distance_matrix, values_matrix, binsize=1):
                 d_index = int(numpy.floor(d / binsize))
                 totals[d_index] += 1
                 distance_values[i, d_index] += value
+
+        totals = numpy.maximum(totals, numpy.ones_like(totals))
         # Average the values
         distance_values[i, :] = distance_values[i, :] / totals
         # Calculate variance

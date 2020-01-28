@@ -72,7 +72,7 @@ class ExperimentConfig:
         if not self.maybe_load_self(filepath):
             if self.graph is None:
                 raise Exception("Graph not yet built")
-            print("\tRunning on dwave... ", end='')
+            print("Running on dwave... ", end='')
             response = self.sampler_fn().sample_ising(self.hs, self.graph.edges,
                                                       num_reads=self.num_reads,
                                                       auto_scale=self.auto_scale)
@@ -112,6 +112,13 @@ class ExperimentConfig:
             print("\tMaking energy histogram")
             pyplot.hist(energies, weights=num_occurrences)
             pyplot.savefig(os.path.join(self.base_dir, "energies.svg"))
+            pyplot.clf()
+
+            print("\tCalculating dimers")
+            dimers = graph_analyzer.get_dimer_matrix()
+            dimers_per_sample = numpy.sum(dimers == 1, axis=0)
+            pyplot.hist(dimers_per_sample, weights=num_occurrences)
+            pyplot.savefig(os.path.join(self.base_dir, "dimer_counts.svg"))
             pyplot.clf()
 
             # Then plot the dimers for one of the ground states (or lowest E we found anyway).
@@ -478,6 +485,7 @@ def draw_average_unit_cell_directions(filename, graph_analyzer, front=True):
             divergence += dy / weight
     return divergence
 
+
 def draw_flippable_states(filename, graph, sample, front=True):
     def flippable_color_fn(edge_a, edge_b):
         color_a = color_on_orientation_fn(*edge_a)
@@ -545,11 +553,11 @@ def staggered_sampler_fn():
 
 
 if __name__ == "__main__":
-    experiment_name = "data/lanl_montecarlo_jsweep"
+    experiment_name = "data/lanl_montecarlo_jsweep_square"
 
     def experiment_gen(base_dir):
         n = 10
-        for i in range(1, n):
+        for i in range(1, n+1):
             print("Building experiment {}".format(i))
             h = 0.0  # float(i) / n
             j = float(i) / n
@@ -560,7 +568,7 @@ if __name__ == "__main__":
             config = ExperimentConfig(experiment_dir, monte_carlo_sampler_fn, h=h, j=j)
             config.num_reads = 1000
             config.auto_scale = False
-            config.build_graph(min_x=7, max_x=16, min_y=0, max_y=8)
+            config.build_graph(min_x=7, max_x=15, min_y=0, max_y=8)
             yield config
 
 
