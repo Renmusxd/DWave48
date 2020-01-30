@@ -20,6 +20,7 @@ class ExperimentConfig:
         self.hs = {}
         self.num_reads = 0
         self.auto_scale = True
+        self.response = None
         self.data = None
         self.machine_temp = machine_temp
         self.h = h
@@ -27,6 +28,7 @@ class ExperimentConfig:
         self.build_kwargs = build_kwargs or {}
         self.sample_kwargs = sample_kwargs or {}
         self.analyzers = []
+        self.meta_analysis = []
 
     def build_graph(self, max_x=8, max_y=16, min_x=0, min_y=0, hs_override=None, build_kwargs=None):
         gb = graphbuilder.GraphBuilder(j=self.j)
@@ -69,6 +71,7 @@ class ExperimentConfig:
         self.num_reads = config.num_reads
         self.auto_scale = config.auto_scale
         self.base_dir = config.base_dir
+        self.response = config.response
         self.data = config.data
         self.graph = config.graph
 
@@ -80,12 +83,12 @@ class ExperimentConfig:
             print("Running on dwave... ", end='')
             kwargs_for_sample = self.sample_kwargs or {}
             kwargs_for_sample.update(sample_kwargs or {})
-            response = self.sampler_fn().sample_ising(self.hs, self.graph.edges,
-                                                      num_reads=self.num_reads,
-                                                      auto_scale=self.auto_scale,
-                                                      **kwargs_for_sample)
+            self.response = self.sampler_fn().sample_ising(self.hs, self.graph.edges,
+                                                           num_reads=self.num_reads,
+                                                           auto_scale=self.auto_scale,
+                                                           **kwargs_for_sample)
             self.data = [({k: sample[k] for k in sample}, energy, num_occurences)
-                         for sample, energy, num_occurences in response.data()]
+                         for sample, energy, num_occurences in self.response.data()]
             print("done!")
             self.save_self(filepath)
 
@@ -129,13 +132,20 @@ class ExperimentConfig:
                         result_dict.update(output)
                 except Exception as e:
                     print("Failed to run:\t{}".format(analyzer_fn))
-                    # raise e
+                    print(e)
+            for analyzer_fn in self.meta_analysis:
+                try:
+                    analyzer_fn(self)
+                except Exception as e:
+                    print("Failed to run:\t{}".format(analyzer_fn))
+                    raise e
+
             print("\tDone!")
         return result_dict
 
     def add_default_analyzers(self):
         def analyzer(analyzer_fn):
-            self.analyzers.append(analyzer_fn)
+            self.add_analysis(analyzer_fn)
             return analyzer_fn
 
         @analyzer
@@ -402,6 +412,9 @@ class ExperimentConfig:
             pyplot.ylabel("Correlation")
             pyplot.savefig(os.path.join(base_dir, "defect_correlation_distance.svg"))
             pyplot.clf()
+
+    def add_meta_analysis(self, analysis_fn):
+        self.meta_analysis.append(analysis_fn)
 
 
 def make_run_dir(data_dir, run_format="run_{}"):

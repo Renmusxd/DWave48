@@ -3,11 +3,12 @@ import collections
 
 
 class MonteCarloSampler:
-    def __init__(self, beta=39.72, timesteps=1e7, annealed=True, only_single_spin_flips=False):
+    def __init__(self, beta=39.72, timesteps=1e7, annealed=True, only_single_spin_flips=False, read_all_energies=False):
         self.beta = beta
         self.timesteps = timesteps
         self.annealed = annealed
         self.basic_moves = only_single_spin_flips
+        self.read_all_energies = read_all_energies
 
     def sample_ising(self, hs, edges, num_reads=1, auto_scale=True):
         all_vars = list(sorted(set(v for (va, vb) in edges for v in [va, vb])))
@@ -28,9 +29,14 @@ class MonteCarloSampler:
         edges = [((all_vars_lookup[va], all_vars_lookup[vb]), j / max_abs_e) for (va, vb), j in edges.items()]
         hs = [hs[v] / max_abs_e for v in all_vars]
         t = int(self.timesteps)
-        if self.annealed:
-            readout = monte_carlo.run_monte_carlo_annealing([(0, 0.0), (t, self.beta)],
-                                                            t, num_reads, edges, hs, self.basic_moves)
+        annealing = [(0, 0.0), (t, self.beta)] if self.annealed else [(0, self.beta), (0, 0.0)]
+        all_energies = None
+        if self.read_all_energies:
+            readout = monte_carlo.run_monte_carlo_annealing_and_get_energies(annealing, t, num_reads, edges, hs, self.basic_moves)
+            all_energies = [energies for energies, _ in readout]
+            readout = [(energies[0], s) for energies, s in readout]
+        elif self.annealed:
+            readout = monte_carlo.run_monte_carlo_annealing(annealing, t, num_reads, edges, hs, self.basic_moves)
         else:
             readout = monte_carlo.run_monte_carlo(self.beta, t, num_reads, edges, hs, self.basic_moves)
         readout = [(energy, tuple(s)) for energy, s in readout]
@@ -45,12 +51,16 @@ class MonteCarloSampler:
                 return -1
 
         readout = [({all_vars[i]: f(v) for i, v in enumerate(s)}, energy, num_occurences[s]) for energy, s in readout]
-        return MonteCarloResponse(readout)
+        return MonteCarloResponse(readout, all_energies=all_energies)
 
 
 class MonteCarloResponse:
-    def __init__(self, data):
+    def __init__(self, data, all_energies=None):
         self.my_data = data
+        self.all_energies = all_energies
 
     def data(self):
         return self.my_data
+
+    def trace_energies(self):
+        return self.all_energies

@@ -78,7 +78,7 @@ fn run_monte_carlo_annealing_and_get_energies(
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
     only_basic_moves: Option<bool>,
-) -> Vec<f64> {
+) -> Vec<(Vec<f64>, Vec<bool>)> {
     let only_basic_moves = only_basic_moves.unwrap_or(false);
     betas.sort_by_key(|(i, _)| *i);
     if betas.is_empty() {
@@ -98,11 +98,11 @@ fn run_monte_carlo_annealing_and_get_energies(
 
     (0..num_experiments)
         .into_par_iter()
-        .map(|_| -> Vec<f64> {
+        .map(|_| {
             let mut gs = GraphState::new(&edges, &biases);
             let mut beta_index = 0;
 
-            (0..timesteps)
+            let v = (0..timesteps)
                 .map(|_| {
                     while i > betas[beta_index + 1].0 {
                         beta_index += 1;
@@ -113,24 +113,9 @@ fn run_monte_carlo_annealing_and_get_energies(
                     gs.do_time_step(beta, only_basic_moves).unwrap();
                     gs.get_energy()
                 })
-                .collect()
-        })
-        .map(Some)
-        .reduce(
-            || None,
-            |acc: Option<Vec<f64>>, v: Option<Vec<f64>>| -> Option<Vec<f64>> {
-                match acc {
-                    None => v,
-                    Some(acc) => Some(
-                        acc.into_iter()
-                            .zip(v.unwrap().into_iter())
-                            .map(|(a, b)| a + b)
-                            .collect(),
-                    ),
-                }
-            },
-        )
-        .unwrap()
+                .collect();
+            (v, gs.get_state())
+        }).collect()
 }
 
 #[pymodule]
