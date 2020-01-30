@@ -44,7 +44,7 @@ class GraphBuilder:
             raise Exception("Attempting to superimpose boundary and cell: {}".format(loc))
         self.periodic_boundaries.add((loc, adj))
 
-    def build(self, h=0):
+    def build(self, h=0, ideal_periodic_boundaries=False):
         connections = {}
         for x, y, front in self.unit_cells:
             if is_type_a(x, y):
@@ -75,6 +75,61 @@ class GraphBuilder:
             hs = {v: h for v in set(v for vs in connections for v in vs)}
         else:
             hs = {}
+
+        if ideal_periodic_boundaries:
+            horizontal_ends = {}
+            vertical_ends = {}
+
+            for x, y, front in self.unit_cells:
+                if (y, front) not in horizontal_ends:
+                    horizontal_ends[(y, front)] = ((x, y), (x, y))
+                else:
+                    (min_x, min_y), (max_x, max_y) = horizontal_ends[(y, front)]
+                    # Order by x
+                    new_min_x, new_min_y = min((min_x, min_y), (x, y))
+                    new_max_x, new_max_y = max((max_x, max_y), (x, y))
+                    horizontal_ends[(y, front)] = ((new_min_x, new_min_y), (new_max_x, new_max_y))
+
+                if (x, front) not in vertical_ends:
+                    vertical_ends[(x, front)] = ((x, y), (x, y))
+                else:
+                    (min_x, min_y), (max_x, max_y) = vertical_ends[(x, front)]
+                    # Order by y
+                    new_min_y, new_min_x = min((min_y, min_x), (y, x))
+                    new_max_y, new_max_x = max((max_y, max_x), (y, x))
+                    vertical_ends[(x, front)] = ((new_min_x, new_min_y), (new_max_x, new_max_y))
+
+            periodic_connections = {}
+            def get_mult(x, y):
+                if is_type_a(x, y):
+                    return 1
+                return -1
+
+            for (_, front), ((ax, ay), (bx, by)) in horizontal_ends.items():
+                # ax < bx
+                va = GraphBuilder.connection_cells[(-1*get_mult(ax, ay), 0, front)]
+                vb = GraphBuilder.connection_cells[(1*get_mult(bx, by), 0, front)]
+                abs_va = var_num(ax, ay, va)
+                abs_vb = var_num(bx, by, vb)
+
+                min_v = min(abs_va, abs_vb)
+                max_v = max(abs_va, abs_vb)
+                edge = (min_v, max_v)
+                periodic_connections.update({edge: -self.j})
+
+            for (_, front), ((ax, ay), (bx, by)) in vertical_ends.items():
+                # ay < by
+                va = GraphBuilder.connection_cells[(0, -1*get_mult(ax, ay), front)]
+                vb = GraphBuilder.connection_cells[(0, 1*get_mult(bx, by), front)]
+                abs_va = var_num(ax, ay, va)
+                abs_vb = var_num(bx, by, vb)
+
+                min_v = min(abs_va, abs_vb)
+                max_v = max(abs_va, abs_vb)
+                edge = (min_v, max_v)
+                periodic_connections.update({edge: -self.j})
+            connections.update(periodic_connections)
+
 
         # TODO: fix
         # for loc, adj in self.periodic_boundaries:

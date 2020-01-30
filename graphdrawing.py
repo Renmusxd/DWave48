@@ -3,6 +3,7 @@ import numpy
 import graphanalysis
 import graphbuilder
 import collections
+import sys
 
 
 def relative_pos_of_relative_index(relative_index):
@@ -16,18 +17,22 @@ def relative_pos_of_relative_index(relative_index):
         return 1, 0
 
 
+def unit_cell_relative_pos(unit_cell_x, unit_cell_y, relative_index):
+    dx, dy = relative_pos_of_relative_index(relative_index)
+    if not graphbuilder.is_type_a(unit_cell_x, unit_cell_y):
+        dx = -dx
+        dy = -dy
+    return dx, dy
+
+
 def position_of_unit_cell(x, y, dist=10):
     return dist * x, dist * y
 
 
 def get_var_pos(index, vars_per_cell=8, unit_cells_per_row=16, dist=10):
     unit_cell_x, unit_cell_y, var_relative = graphbuilder.get_var_traits(index, vars_per_cell, unit_cells_per_row)
-
     x, y = position_of_unit_cell(unit_cell_x, unit_cell_y, dist=dist)
-    dx, dy = relative_pos_of_relative_index(var_relative)
-    if not graphbuilder.is_type_a(unit_cell_x, unit_cell_y):
-        dx = -dx
-        dy = -dy
+    dx, dy = unit_cell_relative_pos(unit_cell_x, unit_cell_y, var_relative)
     return x + dx, y + dy
 
 
@@ -49,8 +54,6 @@ def make_edges_contents(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, c
     debug_details_values = []
     point_draw_values = []
     to_draw_values = []
-    normalize = get_normalization(edges, unit_cells_per_row=unit_cells_per_row, vars_per_cell=vars_per_cell,
-                                  dist=dist, front=front)
     for (var_a, var_b) in edges:
         x1, y1 = get_var_pos(var_a, unit_cells_per_row=unit_cells_per_row, vars_per_cell=vars_per_cell, dist=dist)
         x2, y2 = get_var_pos(var_b, unit_cells_per_row=unit_cells_per_row, vars_per_cell=vars_per_cell, dist=dist)
@@ -59,13 +62,36 @@ def make_edges_contents(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, c
                                                                     vars_per_cell=vars_per_cell)
         b_cell_x, b_cell_y, rel_var_b = graphbuilder.get_var_traits(var_b, unit_cells_per_row=unit_cells_per_row,
                                                                     vars_per_cell=vars_per_cell)
-
-        debug_details_values.append((a_cell_x, a_cell_y, b_cell_x, b_cell_y, rel_var_a, rel_var_b, var_a, var_b))
-        to_draw_values.append((x1, y1, x2, y2, color_fn(var_a, var_b)))
         if var_color_fn:
             point_draw_values.append((x1, y1, var_color_fn(var_a)))
             point_draw_values.append((x2, y2, var_color_fn(var_b)))
 
+        adx, ady = unit_cell_relative_pos(a_cell_x, a_cell_y, rel_var_a)
+        bdx, bdy = unit_cell_relative_pos(b_cell_x, b_cell_y, rel_var_b)
+
+        # If moving multiple cells, just connect to edge of svg from each side
+        match_a = adx + a_cell_x == b_cell_x and ady + a_cell_y == b_cell_y
+        match_b = bdx + b_cell_x == a_cell_x and bdy + b_cell_y == a_cell_y
+
+        if (match_a and match_b) or (a_cell_x == b_cell_x and a_cell_y == b_cell_y):  # default pointing at each other
+            debug_details_values.append((a_cell_x, a_cell_y, b_cell_x, b_cell_y, rel_var_a, rel_var_b, var_a, var_b))
+            to_draw_values.append((x1, y1, x2, y2, color_fn(var_a, var_b)))
+        else:
+            # If they are pointing in weird directions just assume they are near
+            # a boundary and throw the edge
+            # off to the side. YOLO.
+            oax, oay = position_of_unit_cell(a_cell_x + adx, a_cell_y + ady, dist=dist)
+            obx, oby = position_of_unit_cell(b_cell_x + bdx, b_cell_y + bdy, dist=dist)
+
+            # A to boundary
+            debug_details_values.append((a_cell_x, a_cell_y, b_cell_x, b_cell_y, rel_var_a, rel_var_b, var_a, var_b))
+            to_draw_values.append((x1, y1, oax, oay, color_fn(var_a, var_b)))
+            # B to boundary
+            debug_details_values.append((a_cell_x, a_cell_y, b_cell_x, b_cell_y, rel_var_a, rel_var_b, var_a, var_b))
+            to_draw_values.append((x2, y2, obx, oby, color_fn(var_a, var_b)))
+
+    normalize = get_normalization(edges, unit_cells_per_row=unit_cells_per_row, vars_per_cell=vars_per_cell,
+                                  dist=dist, front=front)
     output = io.StringIO()
     for to_draw, to_detail in zip(to_draw_values, debug_details_values):
         a_cell_x, a_cell_y, b_cell_x, b_cell_y, rel_var_a, rel_var_b, var_a, var_b = to_detail
@@ -137,6 +163,9 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
         var_b_pos = numpy.asarray(get_var_pos(var_b, unit_cells_per_row=unit_cells_per_row,
                                               vars_per_cell=vars_per_cell, dist=dist))
         middle = (var_a_pos + var_b_pos) / 2.0
+
+        # TODO periodic BC dimers
+
         # If breaking across two cells, then vertical / horizontal dimer
         if rel_var_a == rel_var_b:
             # Dimer crosses the middle of the two, goes dist/2 on either side perpendicular to the direction
@@ -163,7 +192,7 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
             stop = normalize(end_pos[0], end_pos[1])
             dimer_positions[edge] = (start, stop)
         else:
-            raise Exception("Not sure how to draw dimer across {}-{}".format(var_a, var_b))
+            print("Not sure how to draw dimer across {}-{}".format(var_a, var_b), file=sys.stderr)
 
     output = io.StringIO()
 

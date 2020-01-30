@@ -5,9 +5,11 @@ import graphbuilder
 class GraphAnalyzer:
     """Things about the graph using data from the samples."""
 
-    def __init__(self, graph, samples):
+    def __init__(self, graph, samples, energies, num_occurrences):
         self.graph = graph
         self.samples = samples
+        self.energies = energies
+        self.num_occurrences = num_occurrences
 
         # From get_flat_samples
         self.var_map = None
@@ -368,27 +370,25 @@ class GraphAnalyzer:
             self.defect_euclidean_distance_stdv = distance_stdv
         return defect_corr, self.defect_euclidean_distance_correlations, self.defect_euclidean_distance_stdv, self.graph.dimer_vertex_list
 
-    def get_heightmaps(self):
-
-        # To assign a height to each vertex, make the path through the vertices, passing through each edge.
-        # treat the vertices connecting unit cells as a single vertex, since in the perfect dimer ground states they
-        # should not have broken bonds.
-
-        # All the not diagonal edges are effectively the vertices which can have height values
-        effective_height_locations = [edge for edge, is_diagonal in zip(self.graph.sorted_edges,
-                                                                        self.get_diagonal_dimer_mask())
-                                      if not is_diagonal]
-
-
-        # Make a matrix from diagonal edges to vertices
-
-        diagonal_edges = [edge for edge, is_diagonal in zip(self.graph.sorted_edges, self.get_diagonal_dimer_mask())
-                          if is_diagonal]
-        diagonals = self.get_diagonal_dimer_matrix()
-
-
-        # TODO fill this out.
-        pass
+    # def get_heightmaps(self):
+    #
+    #     # To assign a height to each vertex, make the path through the vertices, passing through each edge.
+    #     # treat the vertices connecting unit cells as a single vertex, since in the perfect dimer ground states they
+    #     # should not have broken bonds.
+    #
+    #     # All the not diagonal edges are effectively the vertices which can have height values
+    #     effective_height_locations = [edge for edge, is_diagonal in zip(self.graph.sorted_edges,
+    #                                                                     self.get_diagonal_dimer_mask())
+    #                                   if not is_diagonal]
+    #     # Make a matrix from diagonal edges to vertices
+    #
+    #     diagonal_edges = [edge for edge, is_diagonal in zip(self.graph.sorted_edges, self.get_diagonal_dimer_mask())
+    #                       if is_diagonal]
+    #     diagonals = self.get_diagonal_dimer_matrix()
+    #
+    #
+    #     # TODO fill this out.
+    #     pass
 
 
 def get_variable_orientation(var_a, var_b):
