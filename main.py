@@ -129,7 +129,7 @@ class ExperimentConfig:
                         result_dict.update(output)
                 except Exception as e:
                     print("Failed to run:\t{}".format(analyzer_fn))
-                    print(e)
+                    # raise e
             print("\tDone!")
         return result_dict
 

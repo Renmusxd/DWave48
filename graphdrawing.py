@@ -164,35 +164,54 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
                                               vars_per_cell=vars_per_cell, dist=dist))
         middle = (var_a_pos + var_b_pos) / 2.0
 
-        # TODO periodic BC dimers
+        adx, ady = unit_cell_relative_pos(a_cell_x, a_cell_y, rel_var_a)
+        bdx, bdy = unit_cell_relative_pos(b_cell_x, b_cell_y, rel_var_b)
+        match_a = adx + a_cell_x == b_cell_x and ady + a_cell_y == b_cell_y
+        match_b = bdx + b_cell_x == a_cell_x and bdy + b_cell_y == a_cell_y
 
-        # If breaking across two cells, then vertical / horizontal dimer
-        if rel_var_a == rel_var_b:
-            # Dimer crosses the middle of the two, goes dist/2 on either side perpendicular to the direction
-            diff_var = var_a_pos - var_b_pos
-            diff_var = (diff_var / numpy.linalg.norm(diff_var)) * dist / 2.0
-            diff_swap = numpy.asarray([diff_var[1], diff_var[0]])
-            start_pos = middle - diff_swap
-            end_pos = middle + diff_swap
-            start_pos = normalize(start_pos[0], start_pos[1])
-            end_pos = normalize(end_pos[0], end_pos[1])
-            dimer_positions[edge] = (start_pos, end_pos)
+        if (match_a and match_b) or (a_cell_x, a_cell_y) == (b_cell_x, b_cell_y):
+            # If breaking across two cells, then vertical / horizontal dimer
+            if rel_var_a == rel_var_b:
+                # Dimer crosses the middle of the two, goes dist/2 on either side perpendicular to the direction
+                diff_var = var_a_pos - var_b_pos
+                diff_var = (diff_var / numpy.linalg.norm(diff_var)) * dist / 2.0
+                diff_swap = numpy.asarray([diff_var[1], diff_var[0]])
+                start_pos = middle - diff_swap
+                end_pos = middle + diff_swap
+                start_pos = normalize(start_pos[0], start_pos[1])
+                end_pos = normalize(end_pos[0], end_pos[1])
+                dimer_positions[edge] = [(start_pos, end_pos)]
 
-        # If internal to a cell, then diagonal
-        elif (a_cell_x, a_cell_y) == (b_cell_x, b_cell_y):
-            unit_cell_pos = numpy.asarray(position_of_unit_cell(a_cell_x, a_cell_y, dist=dist))
+            # If internal to a cell, then diagonal
+            elif (a_cell_x, a_cell_y) == (b_cell_x, b_cell_y):
+                unit_cell_pos = numpy.asarray(position_of_unit_cell(a_cell_x, a_cell_y, dist=dist))
 
-            # Dimer goes from unit_cell_pos, through the middle of var_a_pos, var_b_pos, then forward sqrt(dist**2 / 2)
-            direction = middle - unit_cell_pos
-            direction = direction / numpy.linalg.norm(direction)
-            direction = direction * dist / numpy.sqrt(2)
-            end_pos = direction + unit_cell_pos
-            # Normalize to 0-1
-            start = normalize(unit_cell_pos[0], unit_cell_pos[1])
-            stop = normalize(end_pos[0], end_pos[1])
-            dimer_positions[edge] = (start, stop)
+                # Dimer goes from unit_cell_pos, through the middle of var_a_pos, var_b_pos, then forward sqrt(dist**2 / 2)
+                direction = middle - unit_cell_pos
+                direction = direction / numpy.linalg.norm(direction)
+                direction = direction * dist / numpy.sqrt(2)
+                end_pos = direction + unit_cell_pos
+                # Normalize to 0-1
+                start = normalize(unit_cell_pos[0], unit_cell_pos[1])
+                stop = normalize(end_pos[0], end_pos[1])
+                dimer_positions[edge] = [(start, stop)]
+            else:
+                print("Not sure how to draw dimer across {}-{}".format(var_a, var_b), file=sys.stderr)
         else:
-            print("Not sure how to draw dimer across {}-{}".format(var_a, var_b), file=sys.stderr)
+            # TODO periodic BC dimers
+            center_ax, center_ay = position_of_unit_cell(a_cell_x, a_cell_y, dist=dist)
+            oax, oay = position_of_unit_cell(a_cell_x + adx, a_cell_y + ady, dist=dist)
+            middle_ax, middle_ay = (oax + center_ax) / 2.0, (oay + center_ay) / 2.0
+
+            center_bx, center_by = position_of_unit_cell(b_cell_x, b_cell_y, dist=dist)
+            obx, oby = position_of_unit_cell(b_cell_x + bdx, b_cell_y + bdy, dist=dist)
+            middle_bx, middle_by = (obx + center_bx) / 2.0, (oby + center_by) / 2.0
+
+            lower_dimer = (normalize(middle_ax + ady*dist/2.0, middle_ay + adx*dist/2.0),
+                           normalize(middle_ax - ady*dist/2.0, middle_ay - adx*dist/2.0))
+            larger_dimer = (normalize(middle_bx + bdy * dist / 2.0, middle_by + bdx * dist / 2.0),
+                            normalize(middle_bx - bdy * dist / 2.0, middle_by - bdx * dist / 2.0))
+            dimer_positions[edge] = [lower_dimer, larger_dimer]
 
     output = io.StringIO()
 
@@ -219,6 +238,7 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
                 flippable_lookups[flippable_bond].append(edge)
 
         for _, edges in flippable_lookups.items():
+            # TODO fix for periodic stuff
             if len(edges) != 2:
                 continue
 
@@ -226,8 +246,8 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
             (ax, ay), (bx, by) = edges
             if ax == bx or ay == by:
                 continue
-            sa, ea = dimer_positions[edges[0]]
-            sb, eb = dimer_positions[edges[1]]
+            sa, ea = dimer_positions[edges[0]][0]
+            sb, eb = dimer_positions[edges[1]][0]
             points = [sa, ea, sb, eb]
             points_str = " ".join(",".join(str(p) for p in point) for point in points)
             style_str = 'fill:{};stroke-width:0;fill-opacity:0.5'.format(flippable_color_fn(*edges))
@@ -235,12 +255,13 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
             output.write('<polygon points="{}" style="{}"><title>{}</title></polygon>\n'.format(points_str, style_str,
                                                                                                 comment))
 
-    for (var_a, var_b), ((start_x, start_y), (stop_x, stop_y)) in dimer_positions.items():
-        title_text = "Dimer across edge between sites {}-{}".format(var_a, var_b)
-        output.write(
-            '<line x1="{}" y1="{}" x2="{}" y2="{}" style="stroke:{};stroke-width:{}"><title>{}</title></line>\n'.format(
-                start_x, start_y, stop_x, stop_y, dimer_color_fn(var_a, var_b), width, title_text
-            ))
+    for (var_a, var_b), lines in dimer_positions.items():
+        for (start_x, start_y), (stop_x, stop_y) in lines:
+            title_text = "Dimer across edge between sites {}-{}".format(var_a, var_b)
+            output.write(
+                '<line x1="{}" y1="{}" x2="{}" y2="{}" style="stroke:{};stroke-width:{}"><title>{}</title></line>\n'.format(
+                    start_x, start_y, stop_x, stop_y, dimer_color_fn(var_a, var_b), width, title_text
+                ))
 
     return output.getvalue()
 
@@ -277,5 +298,5 @@ def make_dimer_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dist=5,
 
 def wrap_with_svg(*contents):
     content = "\n".join(contents)
-    return '<svg height="500.0pt" version="1.1" width="500.0pt" viewBox="0 0 1 1" ' \
+    return '<svg height="500.0pt" version="1.1" width="500.0pt" viewBox="-0.1 -0.1 1.2 1.2" ' \
            'xmlns="http://www.w3.org/2000/svg">\n{}</svg>'.format(content)
