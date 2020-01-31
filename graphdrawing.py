@@ -239,21 +239,32 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
 
         for _, edges in flippable_lookups.items():
             # TODO fix for periodic stuff
-            if len(edges) != 2:
-                continue
+            flippable_c = flippable_color_fn(edges)
+            if flippable_c:
+                # points = [p for edge in edges for poss in dimer_positions[edge][0] for p in poss]
+                points = []
+                for edge in edges:
+                    start, stop = dimer_positions[edge][0]
+                    points.append(start)
+                    points.append(stop)
 
-            # Ignore "corners"
-            (ax, ay), (bx, by) = edges
-            if ax == bx or ay == by:
-                continue
-            sa, ea = dimer_positions[edges[0]][0]
-            sb, eb = dimer_positions[edges[1]][0]
-            points = [sa, ea, sb, eb]
-            points_str = " ".join(",".join(str(p) for p in point) for point in points)
-            style_str = 'fill:{};stroke-width:0;fill-opacity:0.5'.format(flippable_color_fn(*edges))
-            comment = "Flippable edges ({})-({})".format(str(edges[0]), str(edges[1]))
-            output.write('<polygon points="{}" style="{}"><title>{}</title></polygon>\n'.format(points_str, style_str,
-                                                                                                comment))
+                points_str = " ".join(",".join(str(p) for p in point) for point in points)
+                style_str = 'fill:{};stroke-width:0;fill-opacity:0.5'.format(flippable_c)
+                comment = "Flippable edges ({})-({})".format(str(edges[0]), str(edges[1]))
+                output.write('<polygon points="{}" style="{}"><title>{}</title></polygon>\n'.format(points_str, style_str,
+                                                                                                    comment))
+                # Ignore "corners"
+                # (ax, ay), (bx, by) = edges
+                # if ax == bx or ay == by:
+                #     continue
+                # sa, ea = dimer_positions[edges[0]][0]
+                # sb, eb = dimer_positions[edges[1]][0]
+                # points = [sa, ea, sb, eb]
+                # points_str = " ".join(",".join(str(p) for p in point) for point in points)
+                # style_str = 'fill:{};stroke-width:0;fill-opacity:0.5'.format(flippable_c)
+                # comment = "Flippable edges ({})-({})".format(str(edges[0]), str(edges[1]))
+                # output.write('<polygon points="{}" style="{}"><title>{}</title></polygon>\n'.format(points_str, style_str,
+                #                                                                                     comment))
 
     for (var_a, var_b), lines in dimer_positions.items():
         for (start_x, start_y), (stop_x, stop_y) in lines:
@@ -291,6 +302,37 @@ def make_dimer_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dist=5,
         dimer_contents = make_dimer_contents(broken_edges, normalize, unit_cells_per_row=unit_cells_per_row,
                                              vars_per_cell=vars_per_cell, dist=dist, dimer_color_fn=dimer_color_fn,
                                              front=front, flippable_color_fn=flippable_color_fn)
+        return wrap_with_svg(background_edges_contents, background_dimer_contents, dimer_contents)
+    else:
+        return None
+
+
+def make_heightmap_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dist=5,
+                       edge_color="gray", dimer_edge_color_fn=None,
+                       dimer_color_fn=None, front=True, heightmap_color_fn=None, var_color_fn=None):
+    def all_edge_color(_, __):
+        return edge_color
+
+    if dimer_edge_color_fn is None:
+        dimer_edge_color_fn = lambda _, __: "black"
+    if dimer_color_fn is None:
+        dimer_color_fn = lambda _, __: "red"
+
+    edges = list(js)
+    broken_edges = [edge for edge in edges
+                    if not graphanalysis.edge_is_satisfied(var_vals, js, edge[0], edge[1])]
+    background_edges_contents, normalize = make_edges_contents(edges, unit_cells_per_row=unit_cells_per_row,
+                                                               vars_per_cell=vars_per_cell, dist=dist,
+                                                               color_fn=all_edge_color, front=front,
+                                                               var_color_fn=var_color_fn)
+    if background_edges_contents:
+        background_dimer_contents = make_dimer_contents(edges, normalize, unit_cells_per_row=unit_cells_per_row,
+                                                        vars_per_cell=vars_per_cell, dist=dist,
+                                                        dimer_color_fn=dimer_edge_color_fn, width="0.005", front=front,
+                                                        flippable_color_fn=heightmap_color_fn)
+        dimer_contents = make_dimer_contents(broken_edges, normalize, unit_cells_per_row=unit_cells_per_row,
+                                             vars_per_cell=vars_per_cell, dist=dist, dimer_color_fn=dimer_color_fn,
+                                             front=front)
         return wrap_with_svg(background_edges_contents, background_dimer_contents, dimer_contents)
     else:
         return None

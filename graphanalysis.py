@@ -370,26 +370,134 @@ class GraphAnalyzer:
             self.defect_euclidean_distance_stdv = distance_stdv
         return defect_corr, self.defect_euclidean_distance_correlations, self.defect_euclidean_distance_stdv, self.graph.dimer_vertex_list
 
-    # def get_heightmaps(self):
-    #
-    #     # To assign a height to each vertex, make the path through the vertices, passing through each edge.
-    #     # treat the vertices connecting unit cells as a single vertex, since in the perfect dimer ground states they
-    #     # should not have broken bonds.
-    #
-    #     # All the not diagonal edges are effectively the vertices which can have height values
-    #     effective_height_locations = [edge for edge, is_diagonal in zip(self.graph.sorted_edges,
-    #                                                                     self.get_diagonal_dimer_mask())
-    #                                   if not is_diagonal]
-    #     # Make a matrix from diagonal edges to vertices
-    #
-    #     diagonal_edges = [edge for edge, is_diagonal in zip(self.graph.sorted_edges, self.get_diagonal_dimer_mask())
-    #                       if is_diagonal]
-    #     diagonals = self.get_diagonal_dimer_matrix()
-    #
-    #
-    #     # TODO fill this out.
-    #     pass
+    def get_heightmaps(self):
 
+        # To assign a height to each vertex, make the path through the vertices, passing through each edge.
+        # treat the vertices connecting unit cells as a single vertex, since in the perfect dimer ground states they
+        # should not have broken bonds.
+
+        # All the not diagonal edges are effectively the vertices which can have height values
+        effective_height_locations = [edge for edge, is_diagonal in zip(self.graph.sorted_edges,
+                                                                        self.get_diagonal_dimer_mask())
+                                      if not is_diagonal]
+        # Make a matrix from diagonal edges to vertices
+
+        diagonal_edges = [edge for edge, is_diagonal in zip(self.graph.sorted_edges, self.get_diagonal_dimer_mask())
+                          if is_diagonal]
+        diagonal_lookup = {
+            edge: i for i, edge in enumerate(diagonal_edges)
+        }
+
+        # Lets make a lookup function
+        def unit_cell_for_var(v):
+            x, y, _ = graphbuilder.get_var_traits(v, vars_per_cell=self.graph.vars_per_cell,
+                                                  unit_cells_per_row=self.graph.unit_cells_per_row)
+            return x, y
+        lookup = {
+            (unit_cell_for_var(va), unit_cell_for_var(vb)): i
+            for i, (va, vb) in enumerate(effective_height_locations)
+        }
+
+        cumulative_matrix = numpy.zeros((len(effective_height_locations), len(diagonal_edges)))
+
+        def px_direction(cell_a, cell_b):
+            ax, ay = cell_a
+            bx, by = cell_b
+            if ax == bx:
+                return (ax, ay), (bx + 1, by - 1)
+            else:
+                return (ax + 1, ay - 1), (bx, by)
+
+        def mx_direction(cell_a, cell_b):
+            ax, ay = cell_a
+            bx, by = cell_b
+            if ax == bx:
+                return (ax - 1, ay + 1), (bx, by)
+            else:
+                return (ax, ay), (bx - 1, by + 1)
+
+        # First lets fill out from the diagonal
+        last_index = 0
+        dx = 1
+        dy = 0
+        x, y = min(unit_cell_for_var(v) for vs in effective_height_locations for v in vs)
+        key = ((x, y), (x + dx, y + dy))
+        while key in lookup:
+            # Get the "center" of the diagonal
+            index = lookup[key]
+            if index != last_index:
+                cumulative_matrix[index, :] = cumulative_matrix[last_index, :]
+                # Get the dimer required to be crossed to get to x, y from x-dy, y-dx
+                edge = get_connecting_diagonal_dimer(x, y, 2*dx - 1, 2*dy - 1)
+                if graphbuilder.is_type_a(x, y):
+                    cumulative_matrix[index, diagonal_lookup[edge]] = 1
+                else:
+                    cumulative_matrix[index, diagonal_lookup[edge]] = -1
+            # Now move in either direction
+            for direction in [px_direction, mx_direction]:
+                last_subkey = key
+                sub_key = direction(key[0], key[1])
+                while sub_key in lookup:
+                    cumulative_matrix[lookup[sub_key], :] = cumulative_matrix[lookup[last_subkey], :]
+                    center_point, edge = get_diagonal_edge_for_unit_cell_edges(last_subkey, sub_key)
+                    # TODO check that these +1 and -1 values are corrent, should depend on A/B center as well
+                    # as clockwise/anticlockwise direction
+                    if graphbuilder.is_type_a(*center_point):
+                        cumulative_matrix[lookup[sub_key], diagonal_lookup[edge]] = 1
+                    else:
+                        cumulative_matrix[lookup[sub_key], diagonal_lookup[edge]] = -1
+
+                    last_subkey = sub_key
+                    sub_key = direction(*sub_key)
+
+            last_index = index
+            x, y = x+dx, y+dy
+            dx, dy = dy, dx
+            key = ((x, y), (x + dx, y + dy))
+
+        diagonals = self.get_diagonal_dimer_matrix().copy()
+
+        # Fill out with the default values for height calculations
+        diagonals[diagonals == 1] = 3
+        diagonals[diagonals == -1] = -1
+        heights = numpy.matmul(cumulative_matrix, diagonals)
+        return effective_height_locations, heights
+
+
+
+def get_diagonal_edge_for_unit_cell_edges(edge_a, edge_b, front=True):
+    dax, day = edge_a[1][0] - edge_a[0][0], edge_a[1][1] - edge_a[0][1]
+    dbx, dby = edge_b[1][0] - edge_b[0][0], edge_b[1][1] - edge_b[0][1]
+    if dax == 1 and day == 0 and dbx == 0 and dby == 1:
+        edge_x = edge_a
+        edge_y = edge_b
+    elif dax == 0 and day == 1 and dbx == 1 and dby == 0:
+        edge_x = edge_b
+        edge_y = edge_a
+    else:
+        raise Exception("Could not get diagonal for unit cell edges {} and {}".format(edge_a, edge_b))
+    for i, point_a in enumerate(edge_x):
+        for j, point_b in enumerate(edge_y):
+            if point_a == point_b:
+                # not i ==> from -1 to 1 instead of 0, 1
+                dx = 2*(1 - i) - 1
+                dy = 2*(1 - j) - 1
+                return point_a, get_connecting_diagonal_dimer(point_a[0], point_a[1], dx, dy, front=front)
+
+
+def get_connecting_diagonal_dimer(x, y, dx, dy, front=True):
+    if not abs(dx) == 1 or not abs(dy) == 1:
+        raise Exception("This is not a proper diagonal, dx,dy=+-1")
+    conn = graphbuilder.get_connection_cells()
+    if not graphbuilder.is_type_a(x, y):
+        dx, dy = -dx, -dy
+    vara = conn[(dx, 0, front)]
+    varb = conn[(0, dy, front)]
+
+    vara = graphbuilder.var_num(x, y, vara)
+    varb = graphbuilder.var_num(x, y, varb)
+
+    return min(vara, varb), max(vara, varb)
 
 def get_variable_orientation(var_a, var_b):
     """Returns 0 for vertical, +-1 for diagonal, None for unexpected."""
@@ -407,7 +515,6 @@ def get_variable_orientation(var_a, var_b):
 
 def average_by_distance(distance_matrix, values_matrix, binsize=1):
     """
-
     :param distance_matrix: NxN matrix of scalar distances.
     :param values_matrix: NxN matrix of scalar values.
     :param binsize: size of bins for output
@@ -416,7 +523,7 @@ def average_by_distance(distance_matrix, values_matrix, binsize=1):
     valid_distances = numpy.logical_not(numpy.logical_or(numpy.isinf(distance_matrix), numpy.isnan(distance_matrix)))
     max_distance = numpy.max(distance_matrix[valid_distances])
     num_bins = int(numpy.ceil(max_distance / binsize)) + 1
-    if num_bins > 1e-6:
+    if num_bins > 1e6:
         raise Exception("Too many distance bins, this can't be good.")
     num_vars = distance_matrix.shape[0]
     distance_values = numpy.zeros((num_vars, num_bins))

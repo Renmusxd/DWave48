@@ -3,7 +3,7 @@ import collections
 
 
 class MonteCarloSampler:
-    def __init__(self, beta=39.72, timesteps=1e5, annealed=True, only_single_spin_flips=False, read_all_energies=False):
+    def __init__(self, beta=39.72, timesteps=1e6, annealed=True, only_single_spin_flips=False, read_all_energies=False):
         self.beta = beta
         self.timesteps = timesteps
         self.annealed = annealed

@@ -13,7 +13,7 @@ from mocksampler import MockSampler
 
 
 class ExperimentConfig:
-    def __init__(self, base_dir, sampler_fn, h=0.0, j=1.0, build_kwargs=None, sample_kwargs=None, machine_temp=14.5e-3, bond_e=12e9):
+    def __init__(self, base_dir, sampler_fn, h=0.0, j=1.0, build_kwargs=None, sample_kwargs=None, machine_temp=14.5e-3, bond_e=12e9, throw_errors=True):
         """machine_temp in K and bond_e in Hz"""
         self.base_dir = base_dir
         self.sampler_fn = sampler_fn
@@ -29,6 +29,7 @@ class ExperimentConfig:
         self.sample_kwargs = sample_kwargs or {}
         self.analyzers = []
         self.meta_analysis = []
+        self.throw_errors = throw_errors
 
         self.machine_temp = machine_temp
 
@@ -67,6 +68,8 @@ class ExperimentConfig:
                 return True
             except Exception as e:
                 print("error: {}".format(str(e)))
+                if self.throw_errors:
+                    raise e
         return False
 
     def save_self(self, filepath):
@@ -143,12 +146,15 @@ class ExperimentConfig:
                 except Exception as e:
                     print("Failed to run:\t{}".format(analyzer_fn))
                     print(e)
+                    if self.throw_errors:
+                        raise e
             for analyzer_fn in self.meta_analysis:
                 try:
                     analyzer_fn(self)
                 except Exception as e:
                     print("Failed to run:\t{}".format(analyzer_fn))
-                    raise e
+                    if self.throw_errors:
+                        raise e
 
             print("\tDone!")
         return result_dict
@@ -423,6 +429,10 @@ class ExperimentConfig:
             pyplot.savefig(os.path.join(base_dir, "defect_correlation_distance.svg"))
             pyplot.clf()
 
+        @analyzer
+        def draw_heightmap_fn(base_dir, graph_analyzer):
+            draw_heightmap(base_dir, graph_analyzer)
+
     def add_meta_analysis(self, analysis_fn):
         self.meta_analysis.append(analysis_fn)
 
@@ -560,17 +570,63 @@ def draw_average_unit_cell_directions(filename, graph_analyzer, front=True):
 
 
 def draw_flippable_states(filename, graph, sample, front=True):
-    def flippable_color_fn(edge_a, edge_b):
-        color_a = color_on_orientation_fn(*edge_a)
-        color_b = color_on_orientation_fn(*edge_b)
-        if color_a == color_b:
-            return color_a
-        else:
-            return "gray"
+    def flippable_color_fn(edges):
+        if len(edges) == 2:
+            edge_a, edge_b = edges
+            color_a = color_on_orientation_fn(*edge_a)
+            color_b = color_on_orientation_fn(*edge_b)
+            if color_a == color_b:
+                return color_a
+            else:
+                return "gray"
+        return None
 
     svg = graphdrawing.make_dimer_svg(graph, sample, front=front, dimer_color_fn=color_on_orientation_fn,
                                       flippable_color_fn=flippable_color_fn)
     if svg:
+        with open(filename, "w") as w:
+            w.write(svg)
+
+
+def draw_heightmap(basedir, graph_analyzer):
+    print("Drawing heightmap")
+    height_locations, heights = graph_analyzer.get_heightmaps()
+    height_lookup = {
+        v: i for i, v in enumerate(height_locations)
+    }
+
+    def yield_repeats(items):
+        items_list = sorted(items)
+        items = iter(items_list)
+        last_item = next(items)
+        for item in items:
+            if item == last_item:
+                yield item
+            last_item = item
+
+    energy, index = min(zip(graph_analyzer.energies, range(len(graph_analyzer.energies))))
+    sample = graph_analyzer.samples[index]
+    heightmap = heights[:,index]
+    min_height, max_height = numpy.min(heightmap), numpy.max(heightmap)
+
+    def normalize(height):
+        return (height - min_height) / (max_height - min_height)
+
+    def heightmap_color_fn(edges):
+        if len(edges) != 4:
+            return None
+        # Get the two points which have two occurences between the two edges.
+        # This should give the edge that we need to look up
+        flippable_edge = tuple(yield_repeats(var for edge in edges for var in edge))
+        perc = normalize(heightmap[height_lookup[flippable_edge]])
+        return "rgb({}%, 0%, 0%)".format(perc*100)
+
+    svg = graphdrawing.make_heightmap_svg(graph_analyzer.graph.edges, sample,
+                                          dimer_color_fn=color_on_orientation_fn,
+                                          heightmap_color_fn=heightmap_color_fn)
+
+    if svg:
+        filename = os.path.join(basedir, "heightmap.svg")
         with open(filename, "w") as w:
             w.write(svg)
 
@@ -632,10 +688,10 @@ def staggered_sampler_fn():
 
 
 if __name__ == "__main__":
-    experiment_name = "data/tmp/test2"
+    experiment_name = "data/lanl_jsweep_square"
 
     def experiment_gen(base_dir):
-        n = 1
+        n = 10
         for i in range(1, n+1):
             print("Building experiment {}".format(i))
             h = 0.0  # float(i) / n
@@ -644,18 +700,18 @@ if __name__ == "__main__":
             if not os.path.exists(experiment_dir):
                 os.makedirs(experiment_dir)
             print("\tUsing directory: {}".format(experiment_dir))
-            config = ExperimentConfig(experiment_dir, monte_carlo_sampler_fn, h=h, j=j)
-            config.num_reads = 1
+            config = ExperimentConfig(experiment_dir, monte_carlo_sampler_fn, h=h, j=j, throw_errors=True)
+            config.num_reads = 10000
             config.auto_scale = False
-            config.build_graph(min_x=7, max_x=15, min_y=0, max_y=8, build_kwargs={'ideal_periodic_boundaries': True})
+            config.build_graph(min_x=7, max_x=15, min_y=0, max_y=8)  #, build_kwargs={'ideal_periodic_boundaries': True})
             yield config
 
 
     def defect_plot(scalars):
         inv_j = scalars['inv_j']
         ej_by_kt = scalars['ej_by_kt']
-        defects = scalars['defect_count']
-        defects_stdv = scalars['defect_stdv']
+        defects = scalars['average_defects']
+        defects_stdv = scalars['stdv_defects']
         hs = scalars['h']
 
         pyplot.errorbar(inv_j, defects, yerr=defects_stdv)
@@ -705,7 +761,7 @@ if __name__ == "__main__":
     def unit_cell_divergence_plot(scalars):
         inv_j = scalars['inv_j']
         ej_by_kt = scalars['ej_by_kt']
-        divergence = scalars['unit_cell_divergence']
+        divergence = scalars['divergence']
 
         pyplot.plot(inv_j, divergence)
         pyplot.xlabel('1/J')
