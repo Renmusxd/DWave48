@@ -13,7 +13,8 @@ from mocksampler import MockSampler
 
 
 class ExperimentConfig:
-    def __init__(self, base_dir, sampler_fn, machine_temp=14.5e-3, h=0.0, j=1.0, build_kwargs=None, sample_kwargs=None):
+    def __init__(self, base_dir, sampler_fn, h=0.0, j=1.0, build_kwargs=None, sample_kwargs=None, machine_temp=14.5e-3, bond_e=12e9):
+        """machine_temp in K and bond_e in Hz"""
         self.base_dir = base_dir
         self.sampler_fn = sampler_fn
         self.graph = None
@@ -22,13 +23,21 @@ class ExperimentConfig:
         self.auto_scale = True
         self.response = None
         self.data = None
-        self.machine_temp = machine_temp
         self.h = h
         self.j = j
         self.build_kwargs = build_kwargs or {}
         self.sample_kwargs = sample_kwargs or {}
         self.analyzers = []
         self.meta_analysis = []
+
+        self.machine_temp = machine_temp
+
+        kb = 1.381e-23
+        h = 6.626e-34
+        self.kt = machine_temp * kb
+        self.bond_e = bond_e * h
+        self.e_over_kt = self.bond_e / self.kt
+        self.ej_over_kt = self.e_over_kt * self.j
 
     def build_graph(self, max_x=8, max_y=16, min_x=0, min_y=0, hs_override=None, build_kwargs=None):
         gb = graphbuilder.GraphBuilder(j=self.j)
@@ -115,6 +124,7 @@ class ExperimentConfig:
                 w.write(svg)
 
         result_dict = {
+            "ej_by_kt": self.ej_over_kt,
             "j": self.j,
             "inv_j": 1.0 / self.j,
             "h": self.h
@@ -643,6 +653,7 @@ if __name__ == "__main__":
 
     def defect_plot(scalars):
         inv_j = scalars['inv_j']
+        ej_by_kt = scalars['ej_by_kt']
         defects = scalars['defect_count']
         defects_stdv = scalars['defect_stdv']
         hs = scalars['h']
@@ -651,6 +662,12 @@ if __name__ == "__main__":
         pyplot.xlabel('1/J')
         pyplot.ylabel('Number of defects')
         pyplot.savefig(os.path.join(experiment_name, 'defects_vs_inv_j.svg'))
+        pyplot.clf()
+
+        pyplot.errorbar(ej_by_kt, defects, yerr=defects_stdv)
+        pyplot.xlabel('J/kT')
+        pyplot.ylabel('Number of defects')
+        pyplot.savefig(os.path.join(experiment_name, 'defects_vs_ej_by_kt.svg'))
         pyplot.clf()
 
         pyplot.errorbar(hs, defects, yerr=defects_stdv)
@@ -662,6 +679,7 @@ if __name__ == "__main__":
 
     def flippable_plot(scalars):
         inv_j = scalars['inv_j']
+        ej_by_kt = scalars['ej_by_kt']
         flippable_count = scalars['flippable_count']
         flippable_stdv = scalars['flippable_stdv']
         hs = scalars['h']
@@ -672,6 +690,12 @@ if __name__ == "__main__":
         pyplot.savefig(os.path.join(experiment_name, 'flippable_vs_inv_j.svg'))
         pyplot.clf()
 
+        pyplot.errorbar(ej_by_kt, flippable_count, yerr=flippable_stdv)
+        pyplot.xlabel('J/kT')
+        pyplot.ylabel('Number of flippable plaquettes')
+        pyplot.savefig(os.path.join(experiment_name, 'flippable_vs_ej_by_kt.svg'))
+        pyplot.clf()
+
         pyplot.errorbar(hs, flippable_count, yerr=flippable_stdv)
         pyplot.xlabel('H')
         pyplot.ylabel('Number of flippable plaquettes')
@@ -680,13 +704,19 @@ if __name__ == "__main__":
 
     def unit_cell_divergence_plot(scalars):
         inv_j = scalars['inv_j']
+        ej_by_kt = scalars['ej_by_kt']
         divergence = scalars['unit_cell_divergence']
-        hs = scalars['h']
 
         pyplot.plot(inv_j, divergence)
         pyplot.xlabel('1/J')
         pyplot.ylabel('Boundary Divergence')
         pyplot.savefig(os.path.join(experiment_name, 'divergence_vs_inv_j.svg'))
+        pyplot.clf()
+
+        pyplot.plot(ej_by_kt, divergence)
+        pyplot.xlabel('J/kT')
+        pyplot.ylabel('Boundary Divergence')
+        pyplot.savefig(os.path.join(experiment_name, 'divergence_vs_ej_by_kt.svg'))
         pyplot.clf()
 
     run_experiment_sweep(experiment_name, experiment_gen(experiment_name),

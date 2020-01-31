@@ -416,6 +416,8 @@ def average_by_distance(distance_matrix, values_matrix, binsize=1):
     valid_distances = numpy.logical_not(numpy.logical_or(numpy.isinf(distance_matrix), numpy.isnan(distance_matrix)))
     max_distance = numpy.max(distance_matrix[valid_distances])
     num_bins = int(numpy.ceil(max_distance / binsize)) + 1
+    if num_bins > 1e-6:
+        raise Exception("Too many distance bins, this can't be good.")
     num_vars = distance_matrix.shape[0]
     distance_values = numpy.zeros((num_vars, num_bins))
     distance_stdv = numpy.zeros((num_vars, num_bins))

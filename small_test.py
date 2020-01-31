@@ -1,9 +1,8 @@
 import tempfile
-import graphbuilder
-import graphanalysis
 import monte_carlo_simulator
 import main
 from matplotlib import pyplot
+import os
 
 
 def monte_carlo_sampler_fn():
@@ -15,14 +14,17 @@ def make_energies_fn(config):
     for es in all_energies:
         pyplot.plot(es)
     pyplot.xscale('log')
-    pyplot.show()
+    pyplot.savefig('thermalization/nonperiodic.svg')
 
 if __name__ == "__main__":
-    tdir = tempfile.mkdtemp()
+    tdir = 'thermalization/nonperiodic'
+    if not os.path.exists(tdir):
+        os.makedirs(tdir)
     config = main.ExperimentConfig(tdir, monte_carlo_sampler_fn, h=0.0, j=1.0)
     config.num_reads = 10
     config.auto_scale = False
-    config.build_graph(min_x=0, max_x=8, min_y=0, max_y=8)
+    config.build_graph(min_x=0, max_x=8, min_y=0, max_y=8, build_kwargs={'ideal_periodic_boundaries': True})
     config.run_or_load_experiment()
+    config.add_default_analyzers()
     config.add_meta_analysis(make_energies_fn)
     results = config.analyze()

@@ -3,7 +3,7 @@ import collections
 
 
 class MonteCarloSampler:
-    def __init__(self, beta=39.72, timesteps=1e7, annealed=True, only_single_spin_flips=False, read_all_energies=False):
+    def __init__(self, beta=39.72, timesteps=1e5, annealed=True, only_single_spin_flips=False, read_all_energies=False):
         self.beta = beta
         self.timesteps = timesteps
         self.annealed = annealed
@@ -34,7 +34,7 @@ class MonteCarloSampler:
         if self.read_all_energies:
             readout = monte_carlo.run_monte_carlo_annealing_and_get_energies(annealing, t, num_reads, edges, hs, self.basic_moves)
             all_energies = [energies for energies, _ in readout]
-            readout = [(energies[0], s) for energies, s in readout]
+            readout = [(energies[-1], s) for energies, s in readout]
         elif self.annealed:
             readout = monte_carlo.run_monte_carlo_annealing(annealing, t, num_reads, edges, hs, self.basic_moves)
         else:
