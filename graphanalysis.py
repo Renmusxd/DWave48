@@ -425,14 +425,12 @@ class GraphAnalyzer:
         while key in lookup:
             # Get the "center" of the diagonal
             index = lookup[key]
+            base_mult = 1 if graphbuilder.is_type_a(x, y) else -1
             if index != last_index:
                 cumulative_matrix[index, :] = cumulative_matrix[last_index, :]
                 # Get the dimer required to be crossed to get to x, y from x-dy, y-dx
                 edge = get_connecting_diagonal_dimer(x, y, 2*dx - 1, 2*dy - 1)
-                if graphbuilder.is_type_a(x, y):
-                    cumulative_matrix[index, diagonal_lookup[edge]] = 1
-                else:
-                    cumulative_matrix[index, diagonal_lookup[edge]] = -1
+                cumulative_matrix[index, diagonal_lookup[edge]] = base_mult
             # Now move in either direction
             for direction in [px_direction, mx_direction]:
                 last_subkey = key
@@ -443,9 +441,9 @@ class GraphAnalyzer:
                     # TODO check that these +1 and -1 values are corrent, should depend on A/B center as well
                     # as clockwise/anticlockwise direction
                     if graphbuilder.is_type_a(*center_point):
-                        cumulative_matrix[lookup[sub_key], diagonal_lookup[edge]] = 1
+                        cumulative_matrix[lookup[sub_key], diagonal_lookup[edge]] = 1*base_mult
                     else:
-                        cumulative_matrix[lookup[sub_key], diagonal_lookup[edge]] = -1
+                        cumulative_matrix[lookup[sub_key], diagonal_lookup[edge]] = -1*base_mult
 
                     last_subkey = sub_key
                     sub_key = direction(*sub_key)
