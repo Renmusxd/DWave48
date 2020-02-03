@@ -417,11 +417,12 @@ class GraphAnalyzer:
                 return (ax, ay), (bx - 1, by + 1)
 
         # First lets fill out from the diagonal
-        last_index = 0
+
         dx = 1
         dy = 0
         x, y = min(unit_cell_for_var(v) for vs in effective_height_locations for v in vs)
         key = ((x, y), (x + dx, y + dy))
+        last_index = lookup[key]
         while key in lookup:
             # Get the "center" of the diagonal
             index = lookup[key]
@@ -432,18 +433,15 @@ class GraphAnalyzer:
                 edge = get_connecting_diagonal_dimer(x, y, 2*dx - 1, 2*dy - 1)
                 cumulative_matrix[index, diagonal_lookup[edge]] = base_mult
             # Now move in either direction
-            for direction in [px_direction, mx_direction]:
+            for direction, dir_mult in zip([px_direction, mx_direction], [1, 1]):
                 last_subkey = key
                 sub_key = direction(key[0], key[1])
+                mult = base_mult*dir_mult
                 while sub_key in lookup:
                     cumulative_matrix[lookup[sub_key], :] = cumulative_matrix[lookup[last_subkey], :]
                     center_point, edge = get_diagonal_edge_for_unit_cell_edges(last_subkey, sub_key)
-                    # TODO check that these +1 and -1 values are corrent, should depend on A/B center as well
-                    # as clockwise/anticlockwise direction
-                    if graphbuilder.is_type_a(*center_point):
-                        cumulative_matrix[lookup[sub_key], diagonal_lookup[edge]] = 1*base_mult
-                    else:
-                        cumulative_matrix[lookup[sub_key], diagonal_lookup[edge]] = -1*base_mult
+                    cumulative_matrix[lookup[sub_key], diagonal_lookup[edge]] = mult
+                    mult = mult*-1
 
                     last_subkey = sub_key
                     sub_key = direction(*sub_key)

@@ -141,13 +141,24 @@ def get_normalization(edges, unit_cells_per_row=16, vars_per_cell=8, dist=5, fro
 
 
 def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, vars_per_cell=8, dist=5,
-                        dimer_color_fn=None, width="0.01", front=True, flippable_color_fn=None):
+                        dimer_color_fn=None, width="0.01", front=True, flippable_color_fn=None, flippable_text_fn=None):
     if normalize is None:
         normalize = get_normalization(broken_edges, unit_cells_per_row=unit_cells_per_row, vars_per_cell=vars_per_cell,
                                       dist=dist, front=front)
 
     if dimer_color_fn is None:
         dimer_color_fn = lambda var_a, var_b: "red"
+
+    def flippable_fn(edges):
+        if flippable_color_fn:
+            c = flippable_color_fn(edges)
+        else:
+            c = None
+        if flippable_text_fn:
+            t = flippable_text_fn(edges)
+        else:
+            t = None
+        return c, t
 
     dimer_positions = {}
     for edge in broken_edges:
@@ -215,7 +226,7 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
 
     output = io.StringIO()
 
-    if flippable_color_fn:
+    if flippable_color_fn or flippable_text_fn:
         # flippables surround (cell)-(cell) bonds
         # make a lookup table to see which bonds belong to each one
         flippable_lookups = collections.defaultdict(list)
@@ -239,32 +250,22 @@ def make_dimer_contents(broken_edges, normalize=None, unit_cells_per_row=16, var
 
         for _, edges in flippable_lookups.items():
             # TODO fix for periodic stuff
-            flippable_c = flippable_color_fn(edges)
+            flippable_c, flippable_text = flippable_fn(edges)
+            points = []
+            for edge in edges:
+                start, stop = dimer_positions[edge][0]
+                points.append(start)
+                points.append(stop)
             if flippable_c:
-                # points = [p for edge in edges for poss in dimer_positions[edge][0] for p in poss]
-                points = []
-                for edge in edges:
-                    start, stop = dimer_positions[edge][0]
-                    points.append(start)
-                    points.append(stop)
-
                 points_str = " ".join(",".join(str(p) for p in point) for point in points)
                 style_str = 'fill:{};stroke-width:0;fill-opacity:0.5'.format(flippable_c)
                 comment = "Flippable edges ({})-({})".format(str(edges[0]), str(edges[1]))
                 output.write('<polygon points="{}" style="{}"><title>{}</title></polygon>\n'.format(points_str, style_str,
                                                                                                     comment))
-                # Ignore "corners"
-                # (ax, ay), (bx, by) = edges
-                # if ax == bx or ay == by:
-                #     continue
-                # sa, ea = dimer_positions[edges[0]][0]
-                # sb, eb = dimer_positions[edges[1]][0]
-                # points = [sa, ea, sb, eb]
-                # points_str = " ".join(",".join(str(p) for p in point) for point in points)
-                # style_str = 'fill:{};stroke-width:0;fill-opacity:0.5'.format(flippable_c)
-                # comment = "Flippable edges ({})-({})".format(str(edges[0]), str(edges[1]))
-                # output.write('<polygon points="{}" style="{}"><title>{}</title></polygon>\n'.format(points_str, style_str,
-                #                                                                                     comment))
+            if flippable_text:
+                average_x = sum(x for x, _ in points)/float(len(points))
+                average_y = sum(y for _, y in points)/float(len(points))
+                output.write('<text x="{}" y="{}" style="font: 0.04px sans-serif;">{}</text>\n'.format(average_x - 0.02, average_y + 0.02, flippable_text))
 
     for (var_a, var_b), lines in dimer_positions.items():
         for (start_x, start_y), (stop_x, stop_y) in lines:
@@ -309,7 +310,7 @@ def make_dimer_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dist=5,
 
 def make_heightmap_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dist=5,
                        edge_color="gray", dimer_edge_color_fn=None,
-                       dimer_color_fn=None, front=True, heightmap_color_fn=None, var_color_fn=None):
+                       dimer_color_fn=None, front=True, heightmap_color_fn=None, var_color_fn=None, title_height_fn=None):
     def all_edge_color(_, __):
         return edge_color
 
@@ -329,7 +330,8 @@ def make_heightmap_svg(js, var_vals, unit_cells_per_row=16, vars_per_cell=8, dis
         background_dimer_contents = make_dimer_contents(edges, normalize, unit_cells_per_row=unit_cells_per_row,
                                                         vars_per_cell=vars_per_cell, dist=dist,
                                                         dimer_color_fn=dimer_edge_color_fn, width="0.005", front=front,
-                                                        flippable_color_fn=heightmap_color_fn)
+                                                        flippable_color_fn=heightmap_color_fn,
+                                                        flippable_text_fn=title_height_fn)
         dimer_contents = make_dimer_contents(broken_edges, normalize, unit_cells_per_row=unit_cells_per_row,
                                              vars_per_cell=vars_per_cell, dist=dist, dimer_color_fn=dimer_color_fn,
                                              front=front)

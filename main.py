@@ -621,10 +621,18 @@ def draw_heightmap(basedir, graph_analyzer):
         perc = normalize(heightmap[height_lookup[flippable_edge]])
         return "rgb({}%, 0%, 0%)".format(perc*100)
 
+    def heightmap_text_fn(edges):
+        if len(edges) != 4:
+            return None
+        # Get the two points which have two occurences between the two edges.
+        # This should give the edge that we need to look up
+        flippable_edge = tuple(yield_repeats(var for edge in edges for var in edge))
+        return str(int(heightmap[height_lookup[flippable_edge]]))
+
     svg = graphdrawing.make_heightmap_svg(graph_analyzer.graph.edges, sample,
                                           dimer_color_fn=color_on_orientation_fn,
-                                          heightmap_color_fn=heightmap_color_fn)
-
+                                          heightmap_color_fn=heightmap_color_fn,
+                                          title_height_fn=heightmap_text_fn)
     if svg:
         filename = os.path.join(basedir, "heightmap.svg")
         with open(filename, "w") as w:
@@ -703,7 +711,7 @@ if __name__ == "__main__":
             config = ExperimentConfig(experiment_dir, monte_carlo_sampler_fn, h=h, j=j, throw_errors=True)
             config.num_reads = 10000
             config.auto_scale = False
-            config.build_graph(min_x=7, max_x=15, min_y=0, max_y=8)  #, build_kwargs={'ideal_periodic_boundaries': True})
+            config.build_graph(min_x=7, max_x=15, min_y=0, max_y=8)
             yield config
 
 
