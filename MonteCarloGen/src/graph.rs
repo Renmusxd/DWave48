@@ -2,10 +2,10 @@ use rand::prelude::*;
 use std::fmt::{Debug, Error, Formatter};
 
 pub struct GraphState {
-    edges: Vec<(Edge, f64)>,
-    binding_mat: Vec<Vec<(usize, f64)>>,
-    biases: Vec<f64>,
-    state: Option<Vec<bool>>,
+    pub(crate) edges: Vec<(Edge, f64)>,
+    pub(crate) binding_mat: Vec<Vec<(usize, f64)>>,
+    pub(crate) biases: Vec<f64>,
+    pub(crate) state: Option<Vec<bool>>,
 }
 
 impl Debug for GraphState {

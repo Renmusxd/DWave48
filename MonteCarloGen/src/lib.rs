@@ -1,4 +1,6 @@
 pub mod graph;
+pub mod qmc;
+pub mod qmc_utils;
 use graph::*;
 use pyo3::prelude::*;
 use rayon::prelude::*;
@@ -115,7 +117,8 @@ fn run_monte_carlo_annealing_and_get_energies(
                 })
                 .collect();
             (v, gs.get_state())
-        }).collect()
+        })
+        .collect()
 }
 
 #[pymodule]
