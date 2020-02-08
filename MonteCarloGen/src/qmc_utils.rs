@@ -3,21 +3,25 @@ use rand::Rng;
 use std::cmp::{max, min};
 use std::fmt::{Debug, Error, Formatter};
 use std::iter::FromIterator;
-use test::stats::Stats;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Op {
-    // vara, varb, edge_index, (vara_value, varb_value)
-    Diagonal(usize, usize, usize, (bool, bool)),
-    // vara, varb, edge_index, input_values, output_values
-    OffDiagonal(usize, usize, usize, (bool, bool), (bool, bool)),
+pub struct Op {
+    vara: usize,
+    varb: usize,
+    bond: usize,
+    inputs: (bool, bool),
+    outputs: (bool, bool)
 }
 
 impl Op {
-    pub(crate) fn get_vars(&self) -> (usize, usize) {
-        match *self {
-            Op::Diagonal(vara, varb, _, _) => (vara, varb),
-            Op::OffDiagonal(vara, varb, _, _, _) => (vara, varb),
+    fn diagonal(vara: usize, varb: usize, bond: usize, state: (bool, bool)) -> Self {
+        Self {
+            vara, varb, bond, inputs: state, outputs: state
+        }
+    }
+    fn offdiagonal(vara: usize, varb: usize, bond: usize, inputs: (bool, bool), outputs: (bool, bool)) -> Self {
+        Self {
+            vara, varb, bond, inputs, outputs
         }
     }
 }
@@ -38,8 +42,8 @@ impl OpNode {
         &mut self,
         opnode: &OpNode,
     ) -> (Option<usize>, Option<usize>) {
-        let (other_vara, other_varb) = opnode.op.get_vars();
-        let (vara, varb) = self.op.get_vars();
+        let (other_vara, other_varb) = (opnode.op.vara, opnode.op.varb);
+        let (vara, varb) = (self.op.vara, self.op.varb);
 
         let a = if vara == other_vara {
             self.prev_vara_op = opnode.prev_vara_op;
@@ -66,8 +70,8 @@ impl OpNode {
         &mut self,
         opnode: &OpNode,
     ) -> (Option<usize>, Option<usize>) {
-        let (other_vara, other_varb) = opnode.op.get_vars();
-        let (vara, varb) = self.op.get_vars();
+        let (other_vara, other_varb) = (opnode.op.vara, opnode.op.varb);
+        let (vara, varb) = (self.op.vara, self.op.varb);
 
         let a = if vara == other_vara {
             self.next_vara_op = opnode.next_vara_op;
@@ -139,8 +143,8 @@ impl FastOps {
         self.set_min_size(p + 1);
 
         // Check if we can do this efficiently
-        let opvars = op.map(|op| op.get_vars());
-        let other_opvars = self.ops[p].as_ref().map(|opnode| opnode.op.get_vars());
+        let opvars = op.map(|op| (op.vara, op.varb));
+        let other_opvars = self.ops[p].as_ref().map(|opnode| (opnode.op.vara, opnode.op.varb));
         match (opvars, other_opvars) {
             (Some((vara, varb)), Some((varc, vard))) if vara == varc && varb == vard => {
                 return self.swap_pth(p, op);
@@ -186,7 +190,7 @@ impl FastOps {
     }
 
     fn tie_op(&mut self, p: usize, op: Op, p_hints: Option<(Option<usize>, Option<usize>)>) {
-        let (vara, varb) = op.get_vars();
+        let (vara, varb) = (op.vara, op.varb);
 
         // Get the previous and next ops
         let (prev_p_op, next_p_op) = p_hints.unwrap_or_else(|| {
@@ -197,9 +201,9 @@ impl FastOps {
         let (prev_vara_op, next_vara_op) =
             find_wrapping_indices_from_back(self.var_ends[vara], p, |p| {
                 let o = self.ops[p].as_ref().unwrap();
-                if vara == o.op.get_vars().0 {
+                if vara == o.op.vara {
                     o.prev_vara_op.unwrap()
-                } else if vara == o.op.get_vars().1 {
+                } else if vara == o.op.varb {
                     o.prev_varb_op.unwrap()
                 } else {
                     unreachable!()
@@ -208,9 +212,9 @@ impl FastOps {
         let (prev_varb_op, next_varb_op) =
             find_wrapping_indices_from_back(self.var_ends[varb], p, |p| {
                 let o = self.ops[p].as_ref().unwrap();
-                if varb == o.op.get_vars().0 {
+                if varb == o.op.vara {
                     o.prev_vara_op.unwrap()
-                } else if varb == o.op.get_vars().1 {
+                } else if varb == o.op.varb {
                     o.prev_varb_op.unwrap()
                 } else {
                     unreachable!()
@@ -257,7 +261,7 @@ impl FastOps {
         // Make previous op with vara point to this one
         let prev_vara_opnode = prev_vara_op.map(|prev_vara| self.ops[prev_vara].as_mut().unwrap());
         if let Some(prev_vara_opnode) = prev_vara_opnode {
-            let (prev_vara, prev_varb) = prev_vara_opnode.op.get_vars();
+            let (prev_vara, prev_varb) = (prev_vara_opnode.op.vara, prev_vara_opnode.op.varb);
             if prev_vara == vara {
                 prev_vara_opnode.next_vara_op = Some(p);
             } else if prev_varb == vara {
@@ -270,7 +274,7 @@ impl FastOps {
         // Make next op with vara point to this one
         let next_vara_opnode = next_vara_op.map(|next_vara| self.ops[next_vara].as_mut().unwrap());
         if let Some(next_vara_opnode) = next_vara_opnode {
-            let (next_vara, next_varb) = next_vara_opnode.op.get_vars();
+            let (next_vara, next_varb) = (next_vara_opnode.op.vara, next_vara_opnode.op.varb);
             if next_vara == vara {
                 next_vara_opnode.prev_vara_op = Some(p);
             } else if next_varb == vara {
@@ -283,7 +287,7 @@ impl FastOps {
         // Make previous op with varb point to this one
         let prev_varb_opnode = prev_varb_op.map(|prev_varb| self.ops[prev_varb].as_mut().unwrap());
         if let Some(prev_varb_opnode) = prev_varb_opnode {
-            let (prev_vara, prev_varb) = prev_varb_opnode.op.get_vars();
+            let (prev_vara, prev_varb) = (prev_varb_opnode.op.vara, prev_varb_opnode.op.varb);
             if prev_vara == varb {
                 prev_varb_opnode.next_vara_op = Some(p);
             } else if prev_varb == varb {
@@ -296,7 +300,7 @@ impl FastOps {
         // Make next op with varb point to this one
         let next_varb_opnode = next_varb_op.map(|next_varb| self.ops[next_varb].as_mut().unwrap());
         if let Some(next_varb_opnode) = next_varb_opnode {
-            let (next_vara, next_varb) = next_varb_opnode.op.get_vars();
+            let (next_vara, next_varb) = (next_varb_opnode.op.vara, next_varb_opnode.op.varb);
             if next_vara == varb {
                 next_varb_opnode.prev_vara_op = Some(p);
             } else if next_varb == varb {
@@ -329,7 +333,7 @@ impl FastOps {
             self.p_ends = None;
         }
 
-        let (vara, varb) = opnode.op.get_vars();
+        let (vara, varb) = (opnode.op.vara, opnode.op.varb);
 
         // Then untie the variable ordering
         // VARA
@@ -339,7 +343,8 @@ impl FastOps {
                 .unwrap()
                 .point_vars_next_past(&opnode);
             // Nones mean end of sequence, should overwrite variable stuff.
-            let (sel_a, sel_b) = self.ops[prev_opnode_pos].as_ref().unwrap().op.get_vars();
+            let opref = &self.ops[prev_opnode_pos].as_ref().unwrap().op;
+            let (sel_a, sel_b) = (opref.vara, opref.varb);
             if next_a.is_none() {
                 self.var_ends[sel_a].as_mut().unwrap().1 = prev_opnode_pos;
             }
@@ -357,7 +362,8 @@ impl FastOps {
                 .unwrap()
                 .point_vars_prev_past(&opnode);
             // Nones mean beginning of sequence, overwrite variable stuff
-            let (sel_a, sel_b) = self.ops[next_opnode_pos].as_ref().unwrap().op.get_vars();
+            let opref = &self.ops[next_opnode_pos].as_ref().unwrap().op;
+            let (sel_a, sel_b) = (opref.vara, opref.varb);
             if prev_a.is_none() {
                 self.var_ends[sel_a].as_mut().unwrap().0 = next_opnode_pos;
             }
@@ -377,7 +383,8 @@ impl FastOps {
                 .as_mut()
                 .unwrap()
                 .point_vars_next_past(&opnode);
-            let (sel_a, sel_b) = self.ops[prev_opnode_pos].as_ref().unwrap().op.get_vars();
+            let opref = &self.ops[prev_opnode_pos].as_ref().unwrap().op;
+            let (sel_a, sel_b) = (opref.vara, opref.varb);
             // Nones mean end of sequence, should overwrite variable stuff.
             if next_a.is_none() {
                 self.var_ends[sel_a].as_mut().unwrap().1 = prev_opnode_pos;
@@ -396,7 +403,8 @@ impl FastOps {
                 .unwrap()
                 .point_vars_prev_past(&opnode);
             // Nones mean beginning of sequence, overwrite variable stuff
-            let (sel_a, sel_b) = self.ops[next_opnode_pos].as_ref().unwrap().op.get_vars();
+            let opref = &self.ops[next_opnode_pos].as_ref().unwrap().op;
+            let (sel_a, sel_b) = (opref.vara, opref.varb);
             if prev_a.is_none() {
                 self.var_ends[sel_a].as_mut().unwrap().0 = next_opnode_pos;
             }
@@ -420,16 +428,11 @@ impl FastOps {
                     (vec![], (Some(p_start), state)),
                     |(mut states, (ppos, mut state)), _| {
                         if let Some(ppos) = ppos {
-                            let op = self.ops[ppos].as_ref().unwrap();
-                            match op.op {
-                                Op::Diagonal(_, _, _, _) => states.push((ppos, state.clone())),
-                                Op::OffDiagonal(vara, varb, _, _, (output_a, output_b)) => {
-                                    state[vara] = output_a;
-                                    state[varb] = output_b;
-                                    states.push((ppos, state.clone()));
-                                }
-                            };
-                            let ppos = op.next_p_op;
+                            let opnode = self.ops[ppos].as_ref().unwrap();
+                            state[opnode.op.vara] = opnode.op.outputs.0;
+                            state[opnode.op.varb] = opnode.op.outputs.1;
+                            states.push((ppos, state.clone()));
+                            let ppos = opnode.next_p_op;
                             (states, (ppos, state))
                         } else {
                             // This shouldn't happen.
@@ -453,7 +456,7 @@ impl FastOps {
                 None => acc,
                 Some(opnode) => {
                     acc.push(opnode.op);
-                    match opnode.op.get_vars() {
+                    match (opnode.op.vara, opnode.op.varb) {
                         (vara, varb) if vara == var => rec_traverse(
                             var,
                             ops,
@@ -487,34 +490,37 @@ impl FastOps {
     where
         H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
     {
+        fn adjust(
+            before: (bool, bool),
+            after: (bool, bool),
+            leg: Leg,
+        ) -> ((bool, bool), (bool, bool)) {
+            let (mut a_bef, mut b_bef) = before;
+            let (mut a_aft, mut b_aft) = after;
+            match leg {
+                (false, false) => {
+                    a_bef = !a_bef;
+                }
+                (false, true) => {
+                    a_aft = !a_aft;
+                }
+                (true, false) => {
+                    b_bef = !b_bef;
+                }
+                (true, true) => {
+                    b_aft = !b_aft;
+                }
+            };
+            ((a_bef, b_bef), (a_aft, b_aft))
+        };
+
         let h = |op: Op, entrance: Leg, exit: Leg| -> f64 {
             let (entrance_var, entrace_side) = entrance;
             let (exit_var, exit_side) = exit;
-            let (vara, varb, b, (mut a_bef, mut b_bef), (mut a_aft, mut b_aft)) = match op {
-                Op::Diagonal(vara, varb, b, state) => (vara, varb, b, state, state),
-                Op::OffDiagonal(vara, varb, b, bef, aft) => (vara, varb, b, bef, aft),
-            };
-
-            let mut adjust = |leg: Leg| {
-                match leg {
-                    (false, false) => {
-                        a_bef = !a_bef;
-                    }
-                    (false, true) => {
-                        a_aft = !a_aft;
-                    }
-                    (true, false) => {
-                        b_bef = !b_bef;
-                    }
-                    (true, true) => {
-                        b_aft = !b_aft;
-                    }
-                };
-            };
-            adjust(entrance);
-            adjust(exit);
+            let (inputs, outputs) = adjust(op.inputs, op.outputs, entrance);
+            let (inputs, outputs) = adjust(inputs, outputs, exit);
             // Call the supplied hamiltonian.
-            hamiltonian(vara, varb, b, (a_bef, b_bef), (a_aft, b_aft))
+            hamiltonian(op.vara, op.varb, op.bond, inputs, outputs)
         };
 
         let opnode = self
@@ -532,15 +538,32 @@ impl FastOps {
             // Get the starting leg (vara/b, top/bottom).
             let initial_leg: Leg = (rng.gen(), rng.gen());
             let mut entrance_leg = initial_leg;
-            //            while {
-            //                let weights = [
-            //                    h(opnode.op, entrance_leg, (false, false)),
-            //                    h(opnode.op, entrance_leg, (false, true)),
-            //                    h(opnode.op, entrance_leg, (true, false)),
-            //                    h(opnode.op, entrance_leg, (true, true)),
-            //                ];
-            //                let total_weight = weights.sum();
-            //            } {};
+            // This is a do-while loop, condition at end of body.
+            let legs = [(false, false), (false, true), (true, false), (true, true)];
+            while {
+                let weights = [
+                    h(opnode.op, entrance_leg, legs[0]),
+                    h(opnode.op, entrance_leg, legs[1]),
+                    h(opnode.op, entrance_leg, legs[2]),
+                    h(opnode.op, entrance_leg, legs[3]),
+                ];
+                let total_weight: f64 = weights.iter().sum();
+                let choice = rng.gen_range(0.0, total_weight);
+                let exit_leg = *weights
+                    .iter()
+                    .zip(legs.iter())
+                    .try_fold(choice, |c, (weight, leg)| {
+                        if c < *weight {
+                            Err(leg)
+                        } else {
+                            Ok(c - *weight)
+                        }
+                    })
+                    .unwrap_err();
+
+
+                initial_leg != entrance_leg
+            } {}
         }
         unimplemented!()
     }
@@ -580,7 +603,7 @@ mod fastops_tests {
     #[test]
     fn add_single_item() {
         let mut f = FastOps::new(2);
-        let op = Op::Diagonal(0, 1, 0, (true, true));
+        let op = Op::diagonal(0, 1, 0, (true, true));
         f.set_pth(0, Some(op));
         println!("{:?}", f);
         assert_eq!(f.n, 1);
@@ -591,8 +614,8 @@ mod fastops_tests {
     #[test]
     fn add_unrelated_item() {
         let mut f = FastOps::new(4);
-        let opa = Op::Diagonal(0, 1, 0, (true, true));
-        let opb = Op::Diagonal(2, 3, 1, (true, true));
+        let opa = Op::diagonal(0, 1, 0, (true, true));
+        let opb = Op::diagonal(2, 3, 1, (true, true));
         f.set_pth(0, Some(opa));
         f.set_pth(1, Some(opb));
         println!("{:?}", f);
@@ -607,7 +630,7 @@ mod fastops_tests {
     #[test]
     fn add_identical_item() {
         let mut f = FastOps::new(2);
-        let opa = Op::Diagonal(0, 1, 0, (true, true));
+        let opa = Op::diagonal(0, 1, 0, (true, true));
         f.set_pth(0, Some(opa));
         f.set_pth(1, Some(opa));
         println!("{:?}", f);
@@ -620,8 +643,8 @@ mod fastops_tests {
     #[test]
     fn add_overlapping_item() {
         let mut f = FastOps::new(3);
-        let opa = Op::Diagonal(0, 1, 0, (true, true));
-        let opb = Op::Diagonal(1, 2, 0, (true, true));
+        let opa = Op::diagonal(0, 1, 0, (true, true));
+        let opb = Op::diagonal(1, 2, 0, (true, true));
         f.set_pth(0, Some(opa));
         f.set_pth(1, Some(opb));
         println!("{:?}", f);
@@ -635,8 +658,8 @@ mod fastops_tests {
     #[test]
     fn add_skipping_item() {
         let mut f = FastOps::new(3);
-        let opa = Op::Diagonal(0, 1, 0, (true, true));
-        let opb = Op::Diagonal(1, 2, 0, (true, true));
+        let opa = Op::diagonal(0, 1, 0, (true, true));
+        let opb = Op::diagonal(1, 2, 0, (true, true));
         f.set_pth(0, Some(opa));
         f.set_pth(2, Some(opb));
         println!("{:?}", f);
@@ -650,8 +673,8 @@ mod fastops_tests {
     #[test]
     fn add_skipping_item_and_remove() {
         let mut f = FastOps::new(3);
-        let opa = Op::Diagonal(0, 1, 0, (true, true));
-        let opb = Op::Diagonal(1, 2, 0, (true, true));
+        let opa = Op::diagonal(0, 1, 0, (true, true));
+        let opb = Op::diagonal(1, 2, 0, (true, true));
         f.set_pth(0, Some(opa));
         f.set_pth(2, Some(opb));
         f.set_pth(2, None);
@@ -666,8 +689,8 @@ mod fastops_tests {
     #[test]
     fn add_skipping_item_and_remove_first() {
         let mut f = FastOps::new(3);
-        let opa = Op::Diagonal(0, 1, 0, (true, true));
-        let opb = Op::Diagonal(1, 2, 0, (true, true));
+        let opa = Op::diagonal(0, 1, 0, (true, true));
+        let opb = Op::diagonal(1, 2, 0, (true, true));
         f.set_pth(0, Some(opa));
         f.set_pth(2, Some(opb));
         f.set_pth(0, None);
@@ -682,8 +705,8 @@ mod fastops_tests {
     #[test]
     fn add_and_remove_all() {
         let mut f = FastOps::new(3);
-        f.set_pth(0, Some(Op::Diagonal(0, 1, 0, (true, true))));
-        f.set_pth(2, Some(Op::Diagonal(1, 2, 0, (true, true))));
+        f.set_pth(0, Some(Op::diagonal(0, 1, 0, (true, true))));
+        f.set_pth(2, Some(Op::diagonal(1, 2, 0, (true, true))));
         f.set_pth(0, None);
         f.set_pth(2, None);
         println!("{:?}", f);
@@ -696,8 +719,8 @@ mod fastops_tests {
     #[test]
     fn get_states_simple() {
         let mut f = FastOps::new(3);
-        f.set_pth(0, Some(Op::Diagonal(0, 1, 0, (true, true))));
-        f.set_pth(2, Some(Op::Diagonal(1, 2, 0, (true, true))));
+        f.set_pth(0, Some(Op::diagonal(0, 1, 0, (true, true))));
+        f.set_pth(2, Some(Op::diagonal(1, 2, 0, (true, true))));
         println!("{:?}", f);
         let states = f.get_p_states(&[true, false, true]);
         println!("{:?}", states);
@@ -708,15 +731,15 @@ mod fastops_tests {
         let mut f = FastOps::new(3);
         f.set_pth(
             0,
-            Some(Op::OffDiagonal(0, 1, 0, (false, true), (true, false))),
+            Some(Op::offdiagonal(0, 1, 0, (false, true), (true, false))),
         );
         f.set_pth(
             1,
-            Some(Op::OffDiagonal(1, 2, 0, (false, true), (true, false))),
+            Some(Op::offdiagonal(1, 2, 0, (false, true), (true, false))),
         );
         f.set_pth(
             2,
-            Some(Op::OffDiagonal(0, 2, 0, (false, true), (true, false))),
+            Some(Op::offdiagonal(0, 2, 0, (false, true), (true, false))),
         );
         println!("{:?}", f);
         let states = f.get_p_states(&[false, true, true]);
