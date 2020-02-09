@@ -166,6 +166,11 @@ impl GraphState {
         self.state.unwrap()
     }
 
+    pub fn set_state(&mut self, state: Vec<bool>) {
+        assert_eq!(self.state.as_ref().unwrap().len(), state.len());
+        self.state = Some(state)
+    }
+
     pub fn get_energy(&self) -> f64 {
         if let Some(state) = &self.state {
             state.iter().enumerate().fold(0.0, |acc, (i, si)| {

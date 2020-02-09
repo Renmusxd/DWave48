@@ -1,82 +1,137 @@
 use crate::graph::{Edge, GraphState};
 use crate::qmc_utils::*;
 use rand::Rng;
+use rand::rngs::ThreadRng;
 
-struct QMCGraph {
+pub struct QMCGraph<R: Rng> {
     edges: Vec<(Edge, f64)>,
-    binding_mat: Vec<Vec<(usize, f64)>>,
     biases: Vec<f64>,
     state: Option<Vec<bool>>,
     cutoff: usize,
-    ops: FastOps,
+    op_manager: FastOps,
+    energy_offset: f64,
+    rng: R
 }
 
-impl QMCGraph {
-    fn new(graph: GraphState, cutoff: usize) -> Self {
+pub fn new_qmc(graph: GraphState, cutoff: usize, energy_offset: f64) -> QMCGraph<ThreadRng> {
+    let rng = rand::thread_rng();
+    QMCGraph::<ThreadRng>::new_with_rng(graph, cutoff, energy_offset, rng)
+}
+
+impl<R: Rng> QMCGraph<R> {
+    pub fn new_with_rng<Rg: Rng>(graph: GraphState, cutoff: usize, energy_offset: f64, rng: Rg) -> QMCGraph<Rg> {
         let edges = graph.edges;
-        let binding_mat = graph.binding_mat;
         let biases = graph.biases;
         let state = graph.state;
         let mut ops = FastOps::new(state.as_ref().map_or(0, |s| s.len()));
         ops.set_min_size(cutoff);
-        Self {
+        QMCGraph::<Rg> {
             edges,
-            binding_mat,
             biases,
             state,
-            ops,
+            op_manager: ops,
             cutoff,
+            energy_offset,
+            rng,
         }
     }
 
-    fn diagonal_op_updates(
-        ops: &mut FastOps,
-        state: &[bool],
-        edges: &[(Edge, f64)],
-        cutoff: usize,
-        beta: f64,
-    ) {
-        unimplemented!()
-        //        let mut rng = rand::thread_rng();
-        //        // Start by editing the ops list
-        //        for p in 0..cutoff {
-        //            let op = ops.get_pth(p);
-        //            let b = match op {
-        //                None => rng.gen_range(0, edges.len()),
-        //                Some(Op::Diagonal(_, _, b)) => b,
-        //                Some(Op::OffDiagonal(_, _, _)) => continue,
-        //            };
-        //            let ((vara, varb), j) = edges[b];
-        //            let same = state[vara] == state[varb];
-        //            let mat_element = if same { j } else { -j };
-        //            let numerator = beta * edges.len() as f64 * mat_element;
-        //            let denominator = (cutoff - ops.get_size()) as f64;
-        //            match op {
-        //                None => {
-        //                    let prob = numerator / denominator;
-        //                    if rng.gen::<f64>() < prob {
-        //                        let op = Op::Diagonal(vara, varb, b);
-        //                        ops.set_pth(p, Some(op));
-        //                    }
-        //                }
-        //                Some(Op::Diagonal(_, _, b)) => {
-        //                    let prob = (denominator + 1.0) / numerator;
-        //                    if rng.gen::<f64>() < prob {
-        //                        ops.set_pth(p, None);
-        //                    }
-        //                }
-        //                Some(Op::OffDiagonal(_, _, _)) => (),
-        //            };
-        //        }
-    }
-
-    fn timesteps(&mut self, t: u64, beta: f64) {
-        self.ops.set_min_size(self.edges.len());
+    pub fn timesteps(&mut self, t: u64, beta: f64) {
+        self.op_manager.set_min_size(self.edges.len());
         let mut state = self.state.take().unwrap();
 
-        // Start by editing the ops list
-        Self::diagonal_op_updates(&mut self.ops, &state, &self.edges, self.cutoff, beta);
+        let edges = &self.edges;
+        let biases = &self.biases;
+        let offset = self.energy_offset;
+        let h = |vara: usize, varb: usize, bond: usize, input_state: (bool, bool), output_state: (bool, bool)| {
+            hamiltonian(vara, varb, bond, input_state, output_state, edges, biases, offset)
+        };
 
-        // Now we can do loop updates easily.
+        for _ in 0..t {
+            // Start by editing the ops list
+            self.op_manager
+                .make_diagonal_update_with_rng(self.cutoff, beta, &state, h, edges.len(), |i| {
+                    edges[i].0
+                }, &mut self.rng);
+            // Now we can do loop updates easily.
+            let state_updates = self.op_manager.make_loop_update_with_rng(None, h, &mut self.rng);
+            state_updates.into_iter().for_each(|(i, v)| {
+                state[i] = v;
+            });
+            let rng = &mut self.rng;
+            let op_manager = &self.op_manager;
+            state.iter_mut().enumerate().for_each(|(var, state)| {
+                if !op_manager.does_var_have_ops(var) && rng.gen_bool(0.5) {
+                    *state = !*state;
+                }
+            });
+        }
+        self.state = Some(state);
+    }
+
+    pub fn clone_state(&self) -> Vec<bool> {
+        self.state.as_ref().unwrap().clone()
+    }
+
+    pub fn into_vec(self) -> Vec<bool> {
+        self.state.unwrap()
+    }
+
+    pub fn debug_print(&self) {
+        let edges = &self.edges;
+        let biases = &self.biases;
+        let offset = self.energy_offset;
+        let h = |vara: usize, varb: usize, bond: usize, input_state: (bool, bool), output_state: (bool, bool)| {
+            hamiltonian(vara, varb, bond, input_state, output_state, edges, biases, offset)
+        };
+        self.op_manager.debug_print(h)
+    }
+
+    pub fn mat_element(&self) -> f64 {
+        let edges = &self.edges;
+        let biases = &self.biases;
+        let offset = self.energy_offset;
+        let h = |vara: usize, varb: usize, bond: usize, input_state: (bool, bool), output_state: (bool, bool)| {
+            hamiltonian(vara, varb, bond, input_state, output_state, edges, biases, offset)
+        };
+        self.op_manager.total_matrix_weight(h)
+    }
+}
+
+fn hamiltonian(vara: usize, varb: usize, bond: usize, input_state: (bool, bool), output_state: (bool, bool), edges: &[(Edge, f64)], biases: &[f64], offset: f64) -> f64 {
+    let matentry = if input_state == output_state {
+        match input_state {
+            (false, false) => edges[bond].1 + offset,
+            (false, true) => -edges[bond].1 + biases[varb] + offset,
+            (true, false) => -edges[bond].1 + biases[vara] + offset,
+            (true, true) => edges[bond].1 + biases[vara] + biases[varb] + offset,
+        }
+    } else {
+        0.0
+    };
+    assert!(matentry >= 0.0);
+    matentry
+}
+
+#[cfg(test)]
+mod qmc_tests {
+    use super::*;
+    use rand_chacha::ChaCha20Rng;
+
+    #[test]
+    fn single_timestep() {
+        let graph = GraphState::new(&[((0,1), 1.0)], &[0.0, 0.0]);
+        let mut rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
+        let mut qmc = QMCGraph::<ChaCha20Rng>::new_with_rng(graph, 10, 3.0, rng);
+        qmc.timesteps(1, 1.0);
+    }
+
+    #[test]
+    fn many_timestep() {
+        let graph = GraphState::new(&[((0,1), 1.0), ((1,2), 1.0), ((2,3), 1.0), ((3,4), 1.0)], &[0.0, 0.0, 0.0, 0.0, 0.0]);
+        let mut rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
+        let mut qmc = QMCGraph::<ChaCha20Rng>::new_with_rng(graph, 10, 3.0, rng);
+        qmc.timesteps(1000, 1.0);
+        println!("{:?}", qmc.into_vec())
     }
 }

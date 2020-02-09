@@ -1,5 +1,5 @@
 [package]
-name = "MonteCarloGen"
+name = "monte_carlo"
 version = "0.1.0"
 authors = ["sumnernh@gmail.com <sumnernh@gmail.com>"]
 edition = "2018"
@@ -8,10 +8,11 @@ edition = "2018"
 
 [lib]
 name = "monte_carlo"
-crate-type = ["cdylib"]
+#crate-type = ["cdylib"]
 
 [dependencies]
 rand = "^0.7.2"
+rand_chacha = "^0.2.0"
 rayon = "^1.2.1"
 num = "^0.2.0"
 
