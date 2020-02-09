@@ -1,5 +1,7 @@
 pub mod graph;
 pub mod qmc;
+pub mod qmc_traits;
+pub mod qmc_types;
 pub mod qmc_utils;
 use graph::*;
 use pyo3::prelude::*;

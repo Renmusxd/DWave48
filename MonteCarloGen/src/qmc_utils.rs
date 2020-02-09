@@ -1,51 +1,13 @@
 extern crate num;
+use crate::qmc_types::*;
 use rand::Rng;
 use std::cmp::{max, min};
 use std::fmt::{Debug, Error, Formatter};
 use std::iter::FromIterator;
 use std::process::exit;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Op {
-    vara: usize,
-    varb: usize,
-    bond: usize,
-    inputs: (bool, bool),
-    outputs: (bool, bool),
-}
-
-impl Op {
-    fn diagonal(vara: usize, varb: usize, bond: usize, state: (bool, bool)) -> Self {
-        Self {
-            vara,
-            varb,
-            bond,
-            inputs: state,
-            outputs: state,
-        }
-    }
-    fn offdiagonal(
-        vara: usize,
-        varb: usize,
-        bond: usize,
-        inputs: (bool, bool),
-        outputs: (bool, bool),
-    ) -> Self {
-        Self {
-            vara,
-            varb,
-            bond,
-            inputs,
-            outputs,
-        }
-    }
-    fn is_diagonal(&self) -> bool {
-        self.inputs == self.outputs
-    }
-}
-
 #[derive(Debug)]
-pub(crate) struct OpNode {
+pub(crate) struct FastOpNode {
     op: Op,
     prev_vara_op: Option<usize>,
     next_vara_op: Option<usize>,
@@ -55,11 +17,8 @@ pub(crate) struct OpNode {
     next_p_op: Option<usize>,
 }
 
-impl OpNode {
-    pub(crate) fn point_prev_past_vara(
-        &mut self,
-        opnode: &OpNode,
-    ) -> Option<usize> {
+impl FastOpNode {
+    pub(crate) fn point_prev_past_vara(&mut self, opnode: &FastOpNode) -> Option<usize> {
         let (other_vara, other_varb) = (opnode.op.vara, opnode.op.varb);
         let (vara, varb) = (self.op.vara, self.op.varb);
 
@@ -73,10 +32,7 @@ impl OpNode {
             None
         }
     }
-    pub(crate) fn point_prev_past_varb(
-        &mut self,
-        opnode: &OpNode,
-    ) -> Option<usize> {
+    pub(crate) fn point_prev_past_varb(&mut self, opnode: &FastOpNode) -> Option<usize> {
         let (other_vara, other_varb) = (opnode.op.vara, opnode.op.varb);
         let (vara, varb) = (self.op.vara, self.op.varb);
 
@@ -91,10 +47,7 @@ impl OpNode {
         }
     }
 
-    pub(crate) fn point_next_past_vara(
-        &mut self,
-        opnode: &OpNode,
-    ) -> Option<usize> {
+    pub(crate) fn point_next_past_vara(&mut self, opnode: &FastOpNode) -> Option<usize> {
         let (other_vara, other_varb) = (opnode.op.vara, opnode.op.varb);
         let (vara, varb) = (self.op.vara, self.op.varb);
 
@@ -109,10 +62,7 @@ impl OpNode {
         }
     }
 
-    pub(crate) fn point_next_past_varb(
-        &mut self,
-        opnode: &OpNode,
-    ) -> Option<usize> {
+    pub(crate) fn point_next_past_varb(&mut self, opnode: &FastOpNode) -> Option<usize> {
         let (other_vara, other_varb) = (opnode.op.vara, opnode.op.varb);
         let (vara, varb) = (self.op.vara, self.op.varb);
 
@@ -129,7 +79,7 @@ impl OpNode {
 }
 
 pub(crate) struct FastOps {
-    ops: Vec<Option<OpNode>>,
+    ops: Vec<Option<FastOpNode>>,
     p_ends: Option<(usize, usize)>,
     var_ends: Vec<Option<(usize, usize)>>,
     n: usize,
@@ -145,36 +95,6 @@ impl Debug for FastOps {
             .try_for_each(|(p, opnode)| f.write_str(format!("{}:\t{:?}\n", p, opnode).as_ref()))
     }
 }
-
-#[derive(PartialEq, Eq, Clone, Copy, Debug)]
-enum Variable {
-    A,
-    B,
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Debug)]
-enum OpSide {
-    Inputs,
-    Outputs,
-}
-
-impl OpSide {
-    fn reverse(self) -> Self {
-        match self {
-            OpSide::Inputs => OpSide::Outputs,
-            OpSide::Outputs => OpSide::Inputs,
-        }
-    }
-}
-
-type Leg = (Variable, OpSide);
-
-static LEGS: [Leg; 4] = [
-    (Variable::A, OpSide::Inputs),
-    (Variable::A, OpSide::Outputs),
-    (Variable::B, OpSide::Inputs),
-    (Variable::B, OpSide::Outputs),
-];
 
 impl FastOps {
     pub(crate) fn new(nvars: usize) -> Self {
@@ -292,7 +212,7 @@ impl FastOps {
                 }
             });
 
-        let opnode = OpNode {
+        let opnode = FastOpNode {
             op,
             prev_vara_op,
             next_vara_op,
@@ -383,7 +303,7 @@ impl FastOps {
         }
     }
 
-    fn untie_op_node(&mut self, opnode: OpNode) {
+    fn untie_op_node(&mut self, opnode: FastOpNode) {
         // First untie the p ordering
         if let Some(prev_opnode_pos) = opnode.prev_p_op {
             // If there's a previous, set it to point to the next.
@@ -508,9 +428,9 @@ impl FastOps {
     fn get_ops_for_var(&self, var: usize) -> Vec<Op> {
         fn rec_traverse(
             var: usize,
-            ops: &[Option<OpNode>],
+            ops: &[Option<FastOpNode>],
             mut acc: Vec<Op>,
-            opnode: Option<&OpNode>,
+            opnode: Option<&FastOpNode>,
         ) -> Vec<Op> {
             match opnode {
                 None => acc,
@@ -648,7 +568,7 @@ impl FastOps {
                 .unwrap_or_else(|| rng.gen_range(0, self.n));
 
             let initial_opnode = (0..initial_n).fold(opnode, |acc, _| {
-                self.ops[opnode.next_p_op.unwrap()].as_ref().unwrap()
+                self.ops[acc.next_p_op.unwrap()].as_ref().unwrap()
             });
             // Get the starting leg (vara/b, top/bottom).
             let initial_var = if rng.gen() { Variable::A } else { Variable::B };
@@ -797,27 +717,43 @@ impl FastOps {
     }
 
     fn p_matrix_weight<H>(&self, p: usize, h: &H) -> f64
-        where H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64
+    where
+        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
     {
         let op = self.ops[p].as_ref().unwrap();
-        h(op.op.vara, op.op.varb, op.op.bond, op.op.inputs, op.op.outputs)
+        h(
+            op.op.vara,
+            op.op.varb,
+            op.op.bond,
+            op.op.inputs,
+            op.op.outputs,
+        )
     }
 
     pub fn total_matrix_weight<H>(&self, h: H) -> f64
-    where H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64
+    where
+        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
     {
         let mut t = 1.0;
         let mut p = self.p_ends.map(|(p, _)| p);
         while p.is_some() {
             let op = self.ops[p.unwrap()].as_ref().unwrap();
-            t *= h(op.op.vara, op.op.varb, op.op.bond, op.op.inputs, op.op.outputs);
+            t *= h(
+                op.op.vara,
+                op.op.varb,
+                op.op.bond,
+                op.op.inputs,
+                op.op.outputs,
+            );
             p = op.next_p_op;
         }
         t
     }
 
     pub fn debug_print<H>(&self, h: H)
-    where H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64 {
+    where
+        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
+    {
         let mut last_p = 0;
         let nvars = self.var_ends.len();
         for i in 0..nvars {
@@ -828,35 +764,35 @@ impl FastOps {
             let mut next_p = Some(p_start);
             while next_p.is_some() {
                 let np = next_p.unwrap();
-                for p in last_p+1..np {
+                for p in last_p + 1..np {
                     for i in 0..nvars {
                         print!("|");
                     }
                     println!("\tp={}", p);
                 }
                 let op = self.ops[np].as_ref().unwrap();
-                for v in 0 .. op.op.vara {
+                for v in 0..op.op.vara {
                     print!("|");
                 }
-                print!("{}", if op.op.inputs.0 { 1 } else {0});
-                for v in op.op.vara+1 .. op.op.varb {
+                print!("{}", if op.op.inputs.0 { 1 } else { 0 });
+                for v in op.op.vara + 1..op.op.varb {
                     print!("|");
                 }
-                print!("{}", if op.op.inputs.1 {1} else {0});
-                for v in op.op.varb+1 .. nvars {
+                print!("{}", if op.op.inputs.1 { 1 } else { 0 });
+                for v in op.op.varb + 1..nvars {
                     print!("|");
                 }
                 println!("\tp={}\t\tW: {:?}", np, self.p_matrix_weight(np, &h));
 
-                for v in 0 .. op.op.vara {
+                for v in 0..op.op.vara {
                     print!("|");
                 }
-                print!("{}", if op.op.outputs.0 {1} else {0});
-                for v in op.op.vara+1 .. op.op.varb {
+                print!("{}", if op.op.outputs.0 { 1 } else { 0 });
+                for v in op.op.vara + 1..op.op.varb {
                     print!("|");
                 }
-                print!("{}", if op.op.outputs.1 {1} else {0});
-                for v in op.op.varb+1 .. nvars {
+                print!("{}", if op.op.outputs.1 { 1 } else { 0 });
+                for v in op.op.varb + 1..nvars {
                     print!("|");
                 }
                 println!("\top: {:?}", &op);
@@ -865,31 +801,6 @@ impl FastOps {
             }
         }
     }
-
-}
-
-fn adjust_states(
-    before: (bool, bool),
-    after: (bool, bool),
-    leg: Leg,
-) -> ((bool, bool), (bool, bool)) {
-    let (mut a_bef, mut b_bef) = before;
-    let (mut a_aft, mut b_aft) = after;
-    match leg {
-        (Variable::A, OpSide::Inputs) => {
-            a_bef = !a_bef;
-        }
-        (Variable::A, OpSide::Outputs) => {
-            a_aft = !a_aft;
-        }
-        (Variable::B, OpSide::Inputs) => {
-            b_bef = !b_bef;
-        }
-        (Variable::B, OpSide::Outputs) => {
-            b_aft = !b_aft;
-        }
-    };
-    ((a_bef, b_bef), (a_aft, b_aft))
 }
 
 fn find_wrapping_indices_from_back<F: Fn(usize) -> usize>(
@@ -1111,7 +1022,15 @@ mod fastops_tests {
 
         let mut f = FastOps::new(3);
         let mut rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
-        f.make_diagonal_update_with_rng(10, 1.0, &[false, false, false], h, edges.len(), |i| edges[i], &mut rng);
+        f.make_diagonal_update_with_rng(
+            10,
+            1.0,
+            &[false, false, false],
+            h,
+            edges.len(),
+            |i| edges[i],
+            &mut rng,
+        );
     }
 
     #[test]
@@ -1122,9 +1041,41 @@ mod fastops_tests {
 
         let mut f = FastOps::new(3);
         let mut rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
-        f.make_diagonal_update_with_rng(10, 1.0, &[false, false, false], h, edges.len(), |i| edges[i], &mut rng);
-        f.make_diagonal_update_with_rng(10, 1.0, &[false, false, false], h, edges.len(), |i| edges[i], &mut rng);
-        f.make_diagonal_update_with_rng(10, 1.0, &[false, false, false], h, edges.len(), |i| edges[i], &mut rng);
-        f.make_diagonal_update_with_rng(10, 1.0, &[false, false, false], h, edges.len(), |i| edges[i], &mut rng);
+        f.make_diagonal_update_with_rng(
+            10,
+            1.0,
+            &[false, false, false],
+            h,
+            edges.len(),
+            |i| edges[i],
+            &mut rng,
+        );
+        f.make_diagonal_update_with_rng(
+            10,
+            1.0,
+            &[false, false, false],
+            h,
+            edges.len(),
+            |i| edges[i],
+            &mut rng,
+        );
+        f.make_diagonal_update_with_rng(
+            10,
+            1.0,
+            &[false, false, false],
+            h,
+            edges.len(),
+            |i| edges[i],
+            &mut rng,
+        );
+        f.make_diagonal_update_with_rng(
+            10,
+            1.0,
+            &[false, false, false],
+            h,
+            edges.len(),
+            |i| edges[i],
+            &mut rng,
+        );
     }
 }

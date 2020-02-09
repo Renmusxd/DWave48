@@ -1,7 +1,7 @@
 use crate::graph::{Edge, GraphState};
 use crate::qmc_utils::*;
-use rand::Rng;
 use rand::rngs::ThreadRng;
+use rand::Rng;
 
 pub struct QMCGraph<R: Rng> {
     edges: Vec<(Edge, f64)>,
@@ -10,7 +10,7 @@ pub struct QMCGraph<R: Rng> {
     cutoff: usize,
     op_manager: FastOps,
     energy_offset: f64,
-    rng: R
+    rng: R,
 }
 
 pub fn new_qmc(graph: GraphState, cutoff: usize, energy_offset: f64) -> QMCGraph<ThreadRng> {
@@ -19,7 +19,12 @@ pub fn new_qmc(graph: GraphState, cutoff: usize, energy_offset: f64) -> QMCGraph
 }
 
 impl<R: Rng> QMCGraph<R> {
-    pub fn new_with_rng<Rg: Rng>(graph: GraphState, cutoff: usize, energy_offset: f64, rng: Rg) -> QMCGraph<Rg> {
+    pub fn new_with_rng<Rg: Rng>(
+        graph: GraphState,
+        cutoff: usize,
+        energy_offset: f64,
+        rng: Rg,
+    ) -> QMCGraph<Rg> {
         let edges = graph.edges;
         let biases = graph.biases;
         let state = graph.state;
@@ -37,24 +42,52 @@ impl<R: Rng> QMCGraph<R> {
     }
 
     pub fn timesteps(&mut self, t: u64, beta: f64) {
+        self.timesteps_measure(t, beta, |_, _| ())
+    }
+
+    pub fn timesteps_measure<F, T>(&mut self, t: u64, beta: f64, state_callback: F) -> T
+    where
+        F: Fn(Option<T>, &[bool]) -> T,
+    {
         self.op_manager.set_min_size(self.edges.len());
         let mut state = self.state.take().unwrap();
 
         let edges = &self.edges;
         let biases = &self.biases;
         let offset = self.energy_offset;
-        let h = |vara: usize, varb: usize, bond: usize, input_state: (bool, bool), output_state: (bool, bool)| {
-            hamiltonian(vara, varb, bond, input_state, output_state, edges, biases, offset)
+        let h = |vara: usize,
+                 varb: usize,
+                 bond: usize,
+                 input_state: (bool, bool),
+                 output_state: (bool, bool)| {
+            hamiltonian(
+                vara,
+                varb,
+                bond,
+                input_state,
+                output_state,
+                edges,
+                biases,
+                offset,
+            )
         };
 
+        let mut acc = None;
         for _ in 0..t {
             // Start by editing the ops list
-            self.op_manager
-                .make_diagonal_update_with_rng(self.cutoff, beta, &state, h, edges.len(), |i| {
-                    edges[i].0
-                }, &mut self.rng);
+            self.op_manager.make_diagonal_update_with_rng(
+                self.cutoff,
+                beta,
+                &state,
+                h,
+                edges.len(),
+                |i| edges[i].0,
+                &mut self.rng,
+            );
             // Now we can do loop updates easily.
-            let state_updates = self.op_manager.make_loop_update_with_rng(None, h, &mut self.rng);
+            let state_updates = self
+                .op_manager
+                .make_loop_update_with_rng(None, h, &mut self.rng);
             state_updates.into_iter().for_each(|(i, v)| {
                 state[i] = v;
             });
@@ -65,8 +98,10 @@ impl<R: Rng> QMCGraph<R> {
                     *state = !*state;
                 }
             });
+            acc = Some(state_callback(acc, &state));
         }
         self.state = Some(state);
+        acc.unwrap()
     }
 
     pub fn clone_state(&self) -> Vec<bool> {
@@ -81,8 +116,21 @@ impl<R: Rng> QMCGraph<R> {
         let edges = &self.edges;
         let biases = &self.biases;
         let offset = self.energy_offset;
-        let h = |vara: usize, varb: usize, bond: usize, input_state: (bool, bool), output_state: (bool, bool)| {
-            hamiltonian(vara, varb, bond, input_state, output_state, edges, biases, offset)
+        let h = |vara: usize,
+                 varb: usize,
+                 bond: usize,
+                 input_state: (bool, bool),
+                 output_state: (bool, bool)| {
+            hamiltonian(
+                vara,
+                varb,
+                bond,
+                input_state,
+                output_state,
+                edges,
+                biases,
+                offset,
+            )
         };
         self.op_manager.debug_print(h)
     }
@@ -91,14 +139,36 @@ impl<R: Rng> QMCGraph<R> {
         let edges = &self.edges;
         let biases = &self.biases;
         let offset = self.energy_offset;
-        let h = |vara: usize, varb: usize, bond: usize, input_state: (bool, bool), output_state: (bool, bool)| {
-            hamiltonian(vara, varb, bond, input_state, output_state, edges, biases, offset)
+        let h = |vara: usize,
+                 varb: usize,
+                 bond: usize,
+                 input_state: (bool, bool),
+                 output_state: (bool, bool)| {
+            hamiltonian(
+                vara,
+                varb,
+                bond,
+                input_state,
+                output_state,
+                edges,
+                biases,
+                offset,
+            )
         };
         self.op_manager.total_matrix_weight(h)
     }
 }
 
-fn hamiltonian(vara: usize, varb: usize, bond: usize, input_state: (bool, bool), output_state: (bool, bool), edges: &[(Edge, f64)], biases: &[f64], offset: f64) -> f64 {
+fn hamiltonian(
+    vara: usize,
+    varb: usize,
+    bond: usize,
+    input_state: (bool, bool),
+    output_state: (bool, bool),
+    edges: &[(Edge, f64)],
+    biases: &[f64],
+    offset: f64,
+) -> f64 {
     let matentry = if input_state == output_state {
         match input_state {
             (false, false) => edges[bond].1 + offset,
@@ -120,7 +190,7 @@ mod qmc_tests {
 
     #[test]
     fn single_timestep() {
-        let graph = GraphState::new(&[((0,1), 1.0)], &[0.0, 0.0]);
+        let graph = GraphState::new(&[((0, 1), 1.0)], &[0.0, 0.0]);
         let mut rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
         let mut qmc = QMCGraph::<ChaCha20Rng>::new_with_rng(graph, 10, 3.0, rng);
         qmc.timesteps(1, 1.0);
@@ -128,7 +198,10 @@ mod qmc_tests {
 
     #[test]
     fn many_timestep() {
-        let graph = GraphState::new(&[((0,1), 1.0), ((1,2), 1.0), ((2,3), 1.0), ((3,4), 1.0)], &[0.0, 0.0, 0.0, 0.0, 0.0]);
+        let graph = GraphState::new(
+            &[((0, 1), 1.0), ((1, 2), 1.0), ((2, 3), 1.0), ((3, 4), 1.0)],
+            &[0.0, 0.0, 0.0, 0.0, 0.0],
+        );
         let mut rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
         let mut qmc = QMCGraph::<ChaCha20Rng>::new_with_rng(graph, 10, 3.0, rng);
         qmc.timesteps(1000, 1.0);
