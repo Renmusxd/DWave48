@@ -43,12 +43,12 @@ impl<R: Rng> QMCGraph<R> {
     }
 
     pub fn timesteps(&mut self, t: u64, beta: f64) {
-        self.timesteps_measure(t, beta, |_, _| ())
+        self.timesteps_measure(t, beta, (), |_, _, _| ());
     }
 
-    pub fn timesteps_measure<F, T>(&mut self, t: u64, beta: f64, state_callback: F) -> T
+    pub fn timesteps_measure<F, T>(&mut self, t: u64, beta: f64, init_t: T, state_fold: F) -> (T, f64)
     where
-        F: Fn(Option<T>, &[bool]) -> T,
+        F: Fn(T, &[bool], f64) -> T,
     {
         let mut state = self.state.take().unwrap();
 
@@ -71,7 +71,8 @@ impl<R: Rng> QMCGraph<R> {
             )
         };
 
-        let mut acc = None;
+        let mut acc = init_t;
+        let mut total_weight = 0.0;
         for _ in 0..t {
             // Start by editing the ops list
             let mut manager = self.op_manager.take().unwrap();
@@ -97,12 +98,14 @@ impl<R: Rng> QMCGraph<R> {
                     *state = !*state;
                 }
             });
-            acc = Some(state_callback(acc, &state));
+            let weight = manager.weight(h);
+            acc = state_fold(acc, &state, weight);
+            total_weight += weight;
 
             self.op_manager = Some(manager.convert_to_diagonal());
         }
         self.state = Some(state);
-        acc.unwrap()
+        (acc, total_weight)
     }
 
     pub fn clone_state(&self) -> Vec<bool> {
@@ -192,7 +195,7 @@ mod qmc_tests {
     #[test]
     fn single_timestep() {
         let graph = GraphState::new(&[((0, 1), 1.0)], &[0.0, 0.0]);
-        let mut rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
+        let rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
         let mut qmc = QMCGraph::<ChaCha20Rng>::new_with_rng(graph, 10, 3.0, rng);
         qmc.timesteps(1, 1.0);
     }
@@ -203,7 +206,7 @@ mod qmc_tests {
             &[((0, 1), 1.0), ((1, 2), 1.0), ((2, 3), 1.0), ((3, 4), 1.0)],
             &[0.0, 0.0, 0.0, 0.0, 0.0],
         );
-        let mut rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
+        let rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
         let mut qmc = QMCGraph::<ChaCha20Rng>::new_with_rng(graph, 10, 3.0, rng);
         qmc.timesteps(1000, 1.0);
         println!("{:?}", qmc.into_vec())

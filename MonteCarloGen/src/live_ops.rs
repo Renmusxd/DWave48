@@ -427,26 +427,6 @@ impl LiveOps {
             op.op.outputs,
         )
     }
-
-    pub fn total_matrix_weight<H>(&self, h: H) -> f64
-    where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
-    {
-        let mut t = 1.0;
-        let mut p = self.p_ends.map(|(p, _)| p);
-        while p.is_some() {
-            let op = self.ops[p.unwrap()].as_ref().unwrap();
-            t *= h(
-                op.op.vara,
-                op.op.varb,
-                op.op.bond,
-                op.op.inputs,
-                op.op.outputs,
-            );
-            p = op.next_p_op;
-        }
-        t
-    }
 }
 
 impl OpContainer for LiveOps {
@@ -464,6 +444,23 @@ impl OpContainer for LiveOps {
         } else {
             self.ops[p].as_ref().map(|opnode| &opnode.op)
         }
+    }
+
+    fn weight<H>(&self, h: H) -> f64 where H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64 {
+        let mut t = 1.0;
+        let mut p = self.p_ends.map(|(p, _)| p);
+        while p.is_some() {
+            let op = self.ops[p.unwrap()].as_ref().unwrap();
+            t *= h(
+                op.op.vara,
+                op.op.varb,
+                op.op.bond,
+                op.op.inputs,
+                op.op.outputs,
+            );
+            p = op.next_p_op;
+        }
+        t
     }
 }
 
@@ -599,10 +596,10 @@ mod fastops_tests {
     fn add_single_item() {
         let mut f = LiveOps::new(2);
         let op = Op::diagonal(0, 1, 0, (true, true));
-        f.set_pth(0, Some(op));
+        f.set_pth(0, Some(op.clone()));
         println!("{:?}", f);
         assert_eq!(f.n, 1);
-        assert_eq!(f.get_ops_for_var(0), vec![op]);
+        assert_eq!(f.get_ops_for_var(0), vec![op.clone()]);
         assert_eq!(f.get_ops_for_var(1), vec![op]);
     }
 
@@ -611,14 +608,14 @@ mod fastops_tests {
         let mut f = LiveOps::new(4);
         let opa = Op::diagonal(0, 1, 0, (true, true));
         let opb = Op::diagonal(2, 3, 1, (true, true));
-        f.set_pth(0, Some(opa));
-        f.set_pth(1, Some(opb));
+        f.set_pth(0, Some(opa.clone()));
+        f.set_pth(1, Some(opb.clone()));
         println!("{:?}", f);
         assert_eq!(f.n, 2);
 
-        assert_eq!(f.get_ops_for_var(0), vec![opa]);
+        assert_eq!(f.get_ops_for_var(0), vec![opa.clone()]);
         assert_eq!(f.get_ops_for_var(1), vec![opa]);
-        assert_eq!(f.get_ops_for_var(2), vec![opb]);
+        assert_eq!(f.get_ops_for_var(2), vec![opb.clone()]);
         assert_eq!(f.get_ops_for_var(3), vec![opb]);
     }
 
@@ -626,13 +623,13 @@ mod fastops_tests {
     fn add_identical_item() {
         let mut f = LiveOps::new(2);
         let opa = Op::diagonal(0, 1, 0, (true, true));
-        f.set_pth(0, Some(opa));
-        f.set_pth(1, Some(opa));
+        f.set_pth(0, Some(opa.clone()));
+        f.set_pth(1, Some(opa.clone()));
         println!("{:?}", f);
         assert_eq!(f.n, 2);
 
-        assert_eq!(f.get_ops_for_var(0), vec![opa, opa]);
-        assert_eq!(f.get_ops_for_var(1), vec![opa, opa]);
+        assert_eq!(f.get_ops_for_var(0), vec![opa.clone(), opa.clone()]);
+        assert_eq!(f.get_ops_for_var(1), vec![opa.clone(), opa.clone()]);
     }
 
     #[test]
@@ -640,13 +637,13 @@ mod fastops_tests {
         let mut f = LiveOps::new(3);
         let opa = Op::diagonal(0, 1, 0, (true, true));
         let opb = Op::diagonal(1, 2, 0, (true, true));
-        f.set_pth(0, Some(opa));
-        f.set_pth(1, Some(opb));
+        f.set_pth(0, Some(opa.clone()));
+        f.set_pth(1, Some(opb.clone()));
         println!("{:?}", f);
         assert_eq!(f.n, 2);
 
-        assert_eq!(f.get_ops_for_var(0), vec![opa]);
-        assert_eq!(f.get_ops_for_var(1), vec![opa, opb]);
+        assert_eq!(f.get_ops_for_var(0), vec![opa.clone()]);
+        assert_eq!(f.get_ops_for_var(1), vec![opa, opb.clone()]);
         assert_eq!(f.get_ops_for_var(2), vec![opb]);
     }
 
@@ -655,13 +652,13 @@ mod fastops_tests {
         let mut f = LiveOps::new(3);
         let opa = Op::diagonal(0, 1, 0, (true, true));
         let opb = Op::diagonal(1, 2, 0, (true, true));
-        f.set_pth(0, Some(opa));
-        f.set_pth(2, Some(opb));
+        f.set_pth(0, Some(opa.clone()));
+        f.set_pth(2, Some(opb.clone()));
         println!("{:?}", f);
         assert_eq!(f.n, 2);
 
-        assert_eq!(f.get_ops_for_var(0), vec![opa]);
-        assert_eq!(f.get_ops_for_var(1), vec![opa, opb]);
+        assert_eq!(f.get_ops_for_var(0), vec![opa.clone()]);
+        assert_eq!(f.get_ops_for_var(1), vec![opa, opb.clone()]);
         assert_eq!(f.get_ops_for_var(2), vec![opb]);
     }
 
@@ -670,13 +667,13 @@ mod fastops_tests {
         let mut f = LiveOps::new(3);
         let opa = Op::diagonal(0, 1, 0, (true, true));
         let opb = Op::diagonal(1, 2, 0, (true, true));
-        f.set_pth(0, Some(opa));
+        f.set_pth(0, Some(opa.clone()));
         f.set_pth(2, Some(opb));
         f.set_pth(2, None);
         println!("{:?}", f);
         assert_eq!(f.n, 1);
 
-        assert_eq!(f.get_ops_for_var(0), vec![opa]);
+        assert_eq!(f.get_ops_for_var(0), vec![opa.clone()]);
         assert_eq!(f.get_ops_for_var(1), vec![opa]);
         assert_eq!(f.get_ops_for_var(2), vec![]);
     }
@@ -687,13 +684,13 @@ mod fastops_tests {
         let opa = Op::diagonal(0, 1, 0, (true, true));
         let opb = Op::diagonal(1, 2, 0, (true, true));
         f.set_pth(0, Some(opa));
-        f.set_pth(2, Some(opb));
+        f.set_pth(2, Some(opb.clone()));
         f.set_pth(0, None);
         println!("{:?}", f);
         assert_eq!(f.n, 1);
 
         assert_eq!(f.get_ops_for_var(0), vec![]);
-        assert_eq!(f.get_ops_for_var(1), vec![opb]);
+        assert_eq!(f.get_ops_for_var(1), vec![opb.clone()]);
         assert_eq!(f.get_ops_for_var(2), vec![opb]);
     }
 
@@ -787,8 +784,7 @@ mod fastops_tests {
             1.0,
             &[false, false, false],
             h,
-            edges.len(),
-            |i| edges[i],
+            (edges.len(), |i| edges[i]),
             &mut rng,
         );
     }
@@ -806,8 +802,7 @@ mod fastops_tests {
             1.0,
             &[false, false, false],
             h,
-            edges.len(),
-            |i| edges[i],
+            (edges.len(), |i| edges[i]),
             &mut rng,
         );
         f.make_diagonal_update_with_rng(
@@ -815,8 +810,7 @@ mod fastops_tests {
             1.0,
             &[false, false, false],
             h,
-            edges.len(),
-            |i| edges[i],
+            (edges.len(), |i| edges[i]),
             &mut rng,
         );
         f.make_diagonal_update_with_rng(
@@ -824,8 +818,7 @@ mod fastops_tests {
             1.0,
             &[false, false, false],
             h,
-            edges.len(),
-            |i| edges[i],
+            (edges.len(), |i| edges[i]),
             &mut rng,
         );
         f.make_diagonal_update_with_rng(
@@ -833,8 +826,7 @@ mod fastops_tests {
             1.0,
             &[false, false, false],
             h,
-            edges.len(),
-            |i| edges[i],
+            (edges.len(), |i| edges[i]),
             &mut rng,
         );
     }

@@ -12,6 +12,9 @@ pub trait OpContainer {
     fn get_n(&self) -> usize;
     fn get_nvars(&self) -> usize;
     fn get_pth(&self, p: usize) -> Option<&Op>;
+    fn weight<H>(&self, h: H) -> f64
+        where
+            H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64;
 }
 
 pub trait DiagonalUpdater: OpContainer {

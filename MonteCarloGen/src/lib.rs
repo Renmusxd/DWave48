@@ -134,35 +134,102 @@ fn run_quantum_monte_carlo(
     biases: Vec<f64>,
     energy_offset: Option<f64>,
 ) -> Vec<Vec<bool>> {
-    let offset = energy_offset.unwrap_or_else(|| {
-        let offset_edge =
-            edges.iter().map(|(_, j)| *j).fold(
-                0.0,
-                |acc, j| {
-                    if j.abs() > acc {
-                        j.abs()
-                    } else {
-                        acc
-                    }
-                },
-            );
-        let offset_bias = biases
-            .iter()
-            .cloned()
-            .fold(0.0, |acc, h| if h < acc { h } else { acc })
-            .abs();
-        offset_edge + offset_bias
-    });
+    let offset = energy_offset.unwrap_or_else(|| get_offset(&edges, &biases));
+    let cutoff = biases.len(); // * max(beta.round() as usize, 1);
     (0..num_experiments)
         .into_par_iter()
         .map(|_| {
             let gs = GraphState::new(&edges, &biases);
-            let cutoff = biases.len() * max(beta.round() as usize, 1);
             let mut qmc_graph = qmc::new_qmc(gs, cutoff, offset);
             qmc_graph.timesteps(timesteps as u64, beta);
             qmc_graph.into_vec()
         })
         .collect()
+}
+
+
+#[pyfunction]
+fn run_quantum_monte_carlo_and_measure_spins(
+    beta: f64,
+    timesteps: usize,
+    num_experiments: u64,
+    edges: Vec<((usize, usize), f64)>,
+    biases: Vec<f64>,
+    spin_measurement: Option<(f64, f64)>,
+    energy_offset: Option<f64>,
+) -> Vec<f64> {
+    let offset = energy_offset.unwrap_or_else(|| get_offset(&edges, &biases));
+    let (down_m, up_m) = spin_measurement.unwrap_or((-1.0, 1.0));
+    let cutoff = biases.len(); // * max(beta.round() as usize, 1);
+    (0..num_experiments)
+        .into_par_iter()
+        .map(|_| {
+            let gs = GraphState::new(&edges, &biases);
+            let mut qmc_graph = qmc::new_qmc(gs, cutoff, offset);
+            let (measure, weight) = qmc_graph.timesteps_measure(timesteps as u64, beta, 0.0, |acc, state, weight| {
+                state.iter().fold(0.0, |acc, b| {
+                    if *b {
+                        acc + up_m
+                    } else {
+                        acc + down_m
+                    }
+                })*weight + acc
+            });
+            measure / weight
+        })
+        .collect()
+}
+
+#[pyfunction]
+fn run_quantum_monte_carlo_and_measure_edges(
+    beta: f64,
+    timesteps: usize,
+    num_experiments: u64,
+    edges: Vec<((usize, usize), f64)>,
+    biases: Vec<f64>,
+    edge_measurement: (f64, f64, f64, f64),
+    energy_offset: Option<f64>,
+) -> Vec<f64> {
+    let offset = energy_offset.unwrap_or_else(|| get_offset(&edges, &biases));
+    let cutoff = biases.len(); // * max(beta.round() as usize, 1);
+    (0..num_experiments)
+        .into_par_iter()
+        .map(|_| {
+            let gs = GraphState::new(&edges, &biases);
+            let mut qmc_graph = qmc::new_qmc(gs, cutoff, offset);
+            let (measure, weight) = qmc_graph.timesteps_measure(timesteps as u64, beta, 0.0, |acc, state, weight| {
+                edges.iter().fold(0.0, |acc, ((vara, varb), j)| {
+                   acc + *j * match (state[*vara], state[*varb]) {
+                        (false, false) => edge_measurement.0,
+                        (false, true) => edge_measurement.1,
+                        (true, false) => edge_measurement.2,
+                        (true, true) => edge_measurement.3
+                    }
+                })*weight + acc
+            });
+            measure / weight
+        })
+        .collect()
+}
+
+pub fn get_offset(edges: &[(Edge, f64)], biases: &[f64]) -> f64 {
+    let offset_edge =
+        edges.iter().map(|(_, j)| *j).fold(
+            0.0,
+            |acc, j| {
+                if j.abs() > acc {
+                    j.abs()
+                } else {
+                    acc
+                }
+            },
+        );
+    let offset_bias = biases
+        .iter()
+        .cloned()
+        .fold(0.0, |acc, h| if h < acc { h } else { acc })
+        .abs();
+    offset_edge + offset_bias
 }
 
 #[pymodule]
@@ -173,5 +240,7 @@ fn monte_carlo(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         run_monte_carlo_annealing_and_get_energies
     ))?;
     m.add_wrapped(pyo3::wrap_pyfunction!(run_quantum_monte_carlo))?;
+    m.add_wrapped(pyo3::wrap_pyfunction!(run_quantum_monte_carlo_and_measure_spins))?;
+    m.add_wrapped(pyo3::wrap_pyfunction!(run_quantum_monte_carlo_and_measure_edges))?;
     Ok(())
 }
