@@ -1,8 +1,8 @@
 extern crate monte_carlo;
+use monte_carlo::get_offset;
 use monte_carlo::graph::GraphState;
 use monte_carlo::qmc::new_qmc;
 use std::cmp::max;
-use monte_carlo::get_offset;
 
 fn run_quantum_monte_carlo(
     beta: f64,
@@ -40,15 +40,14 @@ fn run_quantum_monte_carlo_and_measure_spins(
         .map(|_| {
             let gs = GraphState::new(&edges, &biases);
             let mut qmc_graph = new_qmc(gs, cutoff, offset);
-            let (measure, weight) = qmc_graph.timesteps_measure(timesteps as u64, beta, 0.0, |acc, state, weight| {
-                state.iter().fold(0.0, |acc, b| {
-                    if *b {
-                        acc + up_m
-                    } else {
-                        acc + down_m
-                    }
-                })*weight + acc
-            });
+            let (measure, weight) =
+                qmc_graph.timesteps_measure(timesteps as u64, beta, 0.0, |acc, state, weight| {
+                    state
+                        .iter()
+                        .fold(0.0, |acc, b| if *b { acc + up_m } else { acc + down_m })
+                        * weight
+                        + acc
+                });
             measure / weight
         })
         .collect()

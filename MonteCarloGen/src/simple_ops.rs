@@ -109,19 +109,17 @@ impl OpContainer for SimpleOpDiagonal {
         }
     }
 
-    fn weight<H>(&self, h: H) -> f64 where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64 {
-
-        self.ops.iter().filter(|op| op.is_some()).fold(1.0, |t, op| {
-            let op = op.as_ref().unwrap();
-            h(
-                op.vara,
-                op.varb,
-                op.bond,
-                op.inputs,
-                op.outputs,
-            ) * t
-        })
+    fn weight<H>(&self, h: H) -> f64
+    where
+        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
+    {
+        self.ops
+            .iter()
+            .filter(|op| op.is_some())
+            .fold(1.0, |t, op| {
+                let op = op.as_ref().unwrap();
+                h(op.vara, op.varb, op.bond, op.inputs, op.outputs) * t
+            })
     }
 }
 
@@ -205,8 +203,10 @@ impl OpContainer for SimpleOpLooper {
         self.ops[p].as_ref().map(|opnode| &opnode.op)
     }
 
-    fn weight<H>(&self, h: H) -> f64 where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64 {
+    fn weight<H>(&self, h: H) -> f64
+    where
+        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
+    {
         let mut t = 1.0;
         let mut p = self.p_ends.map(|(p, _)| p);
         while p.is_some() {

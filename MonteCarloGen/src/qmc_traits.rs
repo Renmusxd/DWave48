@@ -13,8 +13,8 @@ pub trait OpContainer {
     fn get_nvars(&self) -> usize;
     fn get_pth(&self, p: usize) -> Option<&Op>;
     fn weight<H>(&self, h: H) -> f64
-        where
-            H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64;
+    where
+        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64;
 }
 
 pub trait DiagonalUpdater: OpContainer {
@@ -101,6 +101,11 @@ pub trait DiagonalUpdater: OpContainer {
     }
 }
 
+pub enum LoopResult {
+    Return,
+    Iterate(usize, Leg),
+}
+
 pub trait LoopUpdater<Node: OpNode>: OpContainer {
     fn get_node_ref(&self, p: usize) -> Option<&Node>;
     fn get_node_mut(&mut self, p: usize) -> Option<&mut Node>;
@@ -174,7 +179,7 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
             };
             let initial_leg = (initial_var, initial_direction);
 
-            let updates = self.recursive_looper(
+            let updates = self.apply_loop_update(
                 (nth_p, initial_leg),
                 nth_p,
                 initial_leg,
@@ -196,15 +201,46 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
         }
     }
 
-    fn recursive_looper<H, R: Rng>(
+    fn apply_loop_update<H, R: Rng>(
+        &mut self,
+        initial_op_and_leg: (usize, Leg),
+        mut sel_op_pos: usize,
+        mut entrance_leg: Leg,
+        h: H,
+        rng: &mut R,
+        mut acc: Vec<Option<bool>>,
+    ) -> Vec<Option<bool>>
+    where
+        H: Copy + Fn(&Op, Leg, Leg) -> f64,
+    {
+        loop {
+            let res = self.loop_body(
+                initial_op_and_leg,
+                sel_op_pos,
+                entrance_leg,
+                h,
+                rng,
+                &mut acc,
+            );
+            match res {
+                LoopResult::Return => break acc,
+                LoopResult::Iterate(new_sel_op_pos, new_entrance_leg) => {
+                    sel_op_pos = new_sel_op_pos;
+                    entrance_leg = new_entrance_leg;
+                }
+            }
+        }
+    }
+
+    fn loop_body<H, R: Rng>(
         &mut self,
         initial_op_and_leg: (usize, Leg),
         sel_op_pos: usize,
         entrance_leg: Leg,
         h: H,
         rng: &mut R,
-        mut acc: Vec<Option<bool>>,
-    ) -> Vec<Option<bool>>
+        acc: &mut [Option<bool>],
+    ) -> LoopResult
     where
         H: Fn(&Op, Leg, Leg) -> f64,
     {
@@ -247,7 +283,7 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
 
         // Check if we closed the loop before going to next opnode.
         if (sel_op_pos, exit_leg) == initial_op_and_leg {
-            acc
+            LoopResult::Return
         } else {
             // Get the next opnode and entrance leg, let us know if it changes the initial/final.
             let (next_op_pos, var_to_match) = match exit_leg {
@@ -298,21 +334,13 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
 
             // If back where we started, close loop and return state changes.
             if (next_op_pos, new_entrance_leg) == initial_op_and_leg {
-                acc
+                LoopResult::Return
             } else {
-                self.recursive_looper(
-                    initial_op_and_leg,
-                    next_op_pos,
-                    new_entrance_leg,
-                    h,
-                    rng,
-                    acc,
-                )
+                LoopResult::Iterate(next_op_pos, new_entrance_leg)
             }
         }
     }
 }
-
 //fn debug_print_looper<L: LoopUpdater<Node>, Node: OpNode, H>(looper: L, h: H)
 //    where
 //        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,

@@ -446,7 +446,10 @@ impl OpContainer for LiveOps {
         }
     }
 
-    fn weight<H>(&self, h: H) -> f64 where H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64 {
+    fn weight<H>(&self, h: H) -> f64
+    where
+        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
+    {
         let mut t = 1.0;
         let mut p = self.p_ends.map(|(p, _)| p);
         while p.is_some() {

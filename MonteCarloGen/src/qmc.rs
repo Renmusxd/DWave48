@@ -46,7 +46,13 @@ impl<R: Rng> QMCGraph<R> {
         self.timesteps_measure(t, beta, (), |_, _, _| ());
     }
 
-    pub fn timesteps_measure<F, T>(&mut self, t: u64, beta: f64, init_t: T, state_fold: F) -> (T, f64)
+    pub fn timesteps_measure<F, T>(
+        &mut self,
+        t: u64,
+        beta: f64,
+        init_t: T,
+        state_fold: F,
+    ) -> (T, f64)
     where
         F: Fn(T, &[bool], f64) -> T,
     {
