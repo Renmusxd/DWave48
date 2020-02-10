@@ -1,5 +1,6 @@
 use crate::graph::{Edge, GraphState};
-use crate::qmc_utils::*;
+use crate::qmc_traits::*;
+use crate::simple_ops::*;
 use rand::rngs::ThreadRng;
 use rand::Rng;
 
@@ -8,7 +9,7 @@ pub struct QMCGraph<R: Rng> {
     biases: Vec<f64>,
     state: Option<Vec<bool>>,
     cutoff: usize,
-    op_manager: FastOps,
+    op_manager: Option<SimpleOpDiagonal>,
     energy_offset: f64,
     rng: R,
 }
@@ -28,13 +29,13 @@ impl<R: Rng> QMCGraph<R> {
         let edges = graph.edges;
         let biases = graph.biases;
         let state = graph.state;
-        let mut ops = FastOps::new(state.as_ref().map_or(0, |s| s.len()));
+        let mut ops = SimpleOpDiagonal::new(state.as_ref().map_or(0, |s| s.len()));
         ops.set_min_size(cutoff);
         QMCGraph::<Rg> {
             edges,
             biases,
             state,
-            op_manager: ops,
+            op_manager: Some(ops),
             cutoff,
             energy_offset,
             rng,
@@ -49,7 +50,6 @@ impl<R: Rng> QMCGraph<R> {
     where
         F: Fn(Option<T>, &[bool]) -> T,
     {
-        self.op_manager.set_min_size(self.edges.len());
         let mut state = self.state.take().unwrap();
 
         let edges = &self.edges;
@@ -61,8 +61,7 @@ impl<R: Rng> QMCGraph<R> {
                  input_state: (bool, bool),
                  output_state: (bool, bool)| {
             hamiltonian(
-                vara,
-                varb,
+                (vara, varb),
                 bond,
                 input_state,
                 output_state,
@@ -75,30 +74,32 @@ impl<R: Rng> QMCGraph<R> {
         let mut acc = None;
         for _ in 0..t {
             // Start by editing the ops list
-            self.op_manager.make_diagonal_update_with_rng(
+            let mut manager = self.op_manager.take().unwrap();
+            manager.make_diagonal_update_with_rng(
                 self.cutoff,
                 beta,
                 &state,
                 h,
-                edges.len(),
-                |i| edges[i].0,
+                (edges.len(), |i| edges[i].0),
                 &mut self.rng,
             );
+
+            let mut manager = manager.convert_to_looper();
             // Now we can do loop updates easily.
-            let state_updates = self
-                .op_manager
-                .make_loop_update_with_rng(None, h, &mut self.rng);
+            let state_updates = manager.make_loop_update_with_rng(None, h, &mut self.rng);
             state_updates.into_iter().for_each(|(i, v)| {
                 state[i] = v;
             });
             let rng = &mut self.rng;
-            let op_manager = &self.op_manager;
+            let manager = manager;
             state.iter_mut().enumerate().for_each(|(var, state)| {
-                if !op_manager.does_var_have_ops(var) && rng.gen_bool(0.5) {
+                if !manager.does_var_have_ops(var) && rng.gen_bool(0.5) {
                     *state = !*state;
                 }
             });
             acc = Some(state_callback(acc, &state));
+
+            self.op_manager = Some(manager.convert_to_diagonal());
         }
         self.state = Some(state);
         acc.unwrap()
@@ -111,57 +112,56 @@ impl<R: Rng> QMCGraph<R> {
     pub fn into_vec(self) -> Vec<bool> {
         self.state.unwrap()
     }
-
-    pub fn debug_print(&self) {
-        let edges = &self.edges;
-        let biases = &self.biases;
-        let offset = self.energy_offset;
-        let h = |vara: usize,
-                 varb: usize,
-                 bond: usize,
-                 input_state: (bool, bool),
-                 output_state: (bool, bool)| {
-            hamiltonian(
-                vara,
-                varb,
-                bond,
-                input_state,
-                output_state,
-                edges,
-                biases,
-                offset,
-            )
-        };
-        self.op_manager.debug_print(h)
-    }
-
-    pub fn mat_element(&self) -> f64 {
-        let edges = &self.edges;
-        let biases = &self.biases;
-        let offset = self.energy_offset;
-        let h = |vara: usize,
-                 varb: usize,
-                 bond: usize,
-                 input_state: (bool, bool),
-                 output_state: (bool, bool)| {
-            hamiltonian(
-                vara,
-                varb,
-                bond,
-                input_state,
-                output_state,
-                edges,
-                biases,
-                offset,
-            )
-        };
-        self.op_manager.total_matrix_weight(h)
-    }
+    //
+    //    pub fn debug_print(&self) {
+    //        let edges = &self.edges;
+    //        let biases = &self.biases;
+    //        let offset = self.energy_offset;
+    //        let h = |vara: usize,
+    //                 varb: usize,
+    //                 bond: usize,
+    //                 input_state: (bool, bool),
+    //                 output_state: (bool, bool)| {
+    //            hamiltonian(
+    //                vara,
+    //                varb,
+    //                bond,
+    //                input_state,
+    //                output_state,
+    //                edges,
+    //                biases,
+    //                offset,
+    //            )
+    //        };
+    //        self.op_manager.debug_print(h)
+    //    }
+    //
+    //    pub fn mat_element(&self) -> f64 {
+    //        let edges = &self.edges;
+    //        let biases = &self.biases;
+    //        let offset = self.energy_offset;
+    //        let h = |vara: usize,
+    //                 varb: usize,
+    //                 bond: usize,
+    //                 input_state: (bool, bool),
+    //                 output_state: (bool, bool)| {
+    //            hamiltonian(
+    //                vara,
+    //                varb,
+    //                bond,
+    //                input_state,
+    //                output_state,
+    //                edges,
+    //                biases,
+    //                offset,
+    //            )
+    //        };
+    //        self.op_manager.total_matrix_weight(h)
+    //    }
 }
 
 fn hamiltonian(
-    vara: usize,
-    varb: usize,
+    vars: (usize, usize),
     bond: usize,
     input_state: (bool, bool),
     output_state: (bool, bool),
@@ -169,12 +169,13 @@ fn hamiltonian(
     biases: &[f64],
     offset: f64,
 ) -> f64 {
+    let (vara, varb) = vars;
     let matentry = if input_state == output_state {
         match input_state {
-            (false, false) => edges[bond].1 + offset,
-            (false, true) => -edges[bond].1 + biases[varb] + offset,
-            (true, false) => -edges[bond].1 + biases[vara] + offset,
-            (true, true) => edges[bond].1 + biases[vara] + biases[varb] + offset,
+            (false, false) => -edges[bond].1 + offset,
+            (false, true) => edges[bond].1 + biases[varb] + offset,
+            (true, false) => edges[bond].1 + biases[vara] + offset,
+            (true, true) => -edges[bond].1 + biases[vara] + biases[varb] + offset,
         }
     } else {
         0.0

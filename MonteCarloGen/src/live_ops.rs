@@ -1,13 +1,11 @@
 extern crate num;
+use crate::qmc_traits::*;
 use crate::qmc_types::*;
-use rand::Rng;
 use std::cmp::{max, min};
 use std::fmt::{Debug, Error, Formatter};
-use std::iter::FromIterator;
-use std::process::exit;
 
 #[derive(Debug)]
-pub(crate) struct FastOpNode {
+pub(crate) struct LiveOpNode {
     op: Op,
     prev_vara_op: Option<usize>,
     next_vara_op: Option<usize>,
@@ -17,9 +15,9 @@ pub(crate) struct FastOpNode {
     next_p_op: Option<usize>,
 }
 
-impl FastOpNode {
-    pub(crate) fn point_prev_past_vara(&mut self, opnode: &FastOpNode) -> Option<usize> {
-        let (other_vara, other_varb) = (opnode.op.vara, opnode.op.varb);
+impl LiveOpNode {
+    pub(crate) fn point_prev_past_vara(&mut self, opnode: &LiveOpNode) -> Option<usize> {
+        let other_vara = opnode.op.vara;
         let (vara, varb) = (self.op.vara, self.op.varb);
 
         if vara == other_vara {
@@ -32,8 +30,8 @@ impl FastOpNode {
             None
         }
     }
-    pub(crate) fn point_prev_past_varb(&mut self, opnode: &FastOpNode) -> Option<usize> {
-        let (other_vara, other_varb) = (opnode.op.vara, opnode.op.varb);
+    pub(crate) fn point_prev_past_varb(&mut self, opnode: &LiveOpNode) -> Option<usize> {
+        let other_varb = opnode.op.varb;
         let (vara, varb) = (self.op.vara, self.op.varb);
 
         if vara == other_varb {
@@ -47,8 +45,8 @@ impl FastOpNode {
         }
     }
 
-    pub(crate) fn point_next_past_vara(&mut self, opnode: &FastOpNode) -> Option<usize> {
-        let (other_vara, other_varb) = (opnode.op.vara, opnode.op.varb);
+    pub(crate) fn point_next_past_vara(&mut self, opnode: &LiveOpNode) -> Option<usize> {
+        let other_vara = opnode.op.vara;
         let (vara, varb) = (self.op.vara, self.op.varb);
 
         if vara == other_vara {
@@ -62,8 +60,8 @@ impl FastOpNode {
         }
     }
 
-    pub(crate) fn point_next_past_varb(&mut self, opnode: &FastOpNode) -> Option<usize> {
-        let (other_vara, other_varb) = (opnode.op.vara, opnode.op.varb);
+    pub(crate) fn point_next_past_varb(&mut self, opnode: &LiveOpNode) -> Option<usize> {
+        let other_varb = opnode.op.varb;
         let (vara, varb) = (self.op.vara, self.op.varb);
 
         if vara == other_varb {
@@ -78,14 +76,28 @@ impl FastOpNode {
     }
 }
 
-pub(crate) struct FastOps {
-    ops: Vec<Option<FastOpNode>>,
+impl OpNode for LiveOpNode {
+    fn get_op(&self) -> Op {
+        self.op.clone()
+    }
+
+    fn get_op_ref(&self) -> &Op {
+        &self.op
+    }
+
+    fn get_op_mut(&mut self) -> &mut Op {
+        &mut self.op
+    }
+}
+
+pub(crate) struct LiveOps {
+    ops: Vec<Option<LiveOpNode>>,
     p_ends: Option<(usize, usize)>,
     var_ends: Vec<Option<(usize, usize)>>,
     n: usize,
 }
 
-impl Debug for FastOps {
+impl Debug for LiveOps {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         f.write_str(format!("p_ends:\t{:?}\tn: {}\n", self.p_ends, self.n).as_ref())?;
         f.write_str(format!("var_ends:\t{:?}\n", self.var_ends).as_ref())?;
@@ -96,8 +108,8 @@ impl Debug for FastOps {
     }
 }
 
-impl FastOps {
-    pub(crate) fn new(nvars: usize) -> Self {
+impl LiveOps {
+    pub fn new(nvars: usize) -> Self {
         Self {
             ops: Vec::default(),
             p_ends: None,
@@ -106,7 +118,7 @@ impl FastOps {
         }
     }
 
-    pub(crate) fn set_min_size(&mut self, n: usize) {
+    pub fn set_min_size(&mut self, n: usize) {
         if self.ops.len() < n {
             self.ops.resize_with(n, || None)
         }
@@ -116,63 +128,11 @@ impl FastOps {
         self.var_ends[var].is_some()
     }
 
-    pub(crate) fn get_size(&self) -> usize {
-        self.n
-    }
-
-    pub(crate) fn get_pth(&self, p: usize) -> Option<Op> {
-        if p >= self.ops.len() {
-            None
-        } else {
-            self.ops[p].as_ref().map(|opnode| opnode.op)
-        }
-    }
-
-    pub(crate) fn set_pth(&mut self, p: usize, op: Option<Op>) -> Option<Op> {
-        self.set_min_size(p + 1);
-
-        // Check if we can do this efficiently
-        let opvars = op.map(|op| (op.vara, op.varb));
-        let other_opvars = self.ops[p]
-            .as_ref()
-            .map(|opnode| (opnode.op.vara, opnode.op.varb));
-        match (opvars, other_opvars) {
-            (Some((vara, varb)), Some((varc, vard))) if vara == varc && varb == vard => {
-                return self.swap_pth(p, op);
-            }
-            _ => (),
-        };
-
-        let old_opinfo = match self.ops[p].take() {
-            Some(opnode) => {
-                let retval = Some((opnode.op, opnode.prev_p_op, opnode.next_p_op));
-                self.untie_op_node(opnode);
-                retval
-            }
-            None => None,
-        };
-
-        // If we are just inserting an Identity (None), then we are done.
-        // Otherwise we need to insert some stuff.
-        if let Some(op) = op {
-            // Makes an opnode for the op, ties it into the graph.
-            self.tie_op(p, op, old_opinfo.map(|(_, p, n)| (p, n)))
-        };
-
-        if old_opinfo.is_some() {
-            self.n -= 1;
-        }
-        if op.is_some() {
-            self.n += 1;
-        }
-        old_opinfo.map(|(op, _, _)| op)
-    }
-
     pub(crate) fn swap_pth(&mut self, p: usize, op: Option<Op>) -> Option<Op> {
         match (self.ops[p].as_mut(), op) {
             (None, None) => None,
             (Some(mut opnode), Some(op)) => {
-                let oldop = opnode.op;
+                let oldop = opnode.op.clone();
                 opnode.op = op;
                 Some(oldop)
             }
@@ -212,7 +172,7 @@ impl FastOps {
                 }
             });
 
-        let opnode = FastOpNode {
+        let opnode = LiveOpNode {
             op,
             prev_vara_op,
             next_vara_op,
@@ -303,7 +263,7 @@ impl FastOps {
         }
     }
 
-    fn untie_op_node(&mut self, opnode: FastOpNode) {
+    fn untie_op_node(&mut self, opnode: LiveOpNode) {
         // First untie the p ordering
         if let Some(prev_opnode_pos) = opnode.prev_p_op {
             // If there's a previous, set it to point to the next.
@@ -335,8 +295,6 @@ impl FastOps {
                 .unwrap()
                 .point_next_past_vara(&opnode);
             // Nones mean end of sequence, should overwrite variable stuff.
-            let opref = &self.ops[prev_opnode_pos].as_ref().unwrap().op;
-            let (sel_a, sel_b) = (opref.vara, opref.varb);
             if next_a.is_none() {
                 self.var_ends[vara].as_mut().unwrap().1 = prev_opnode_pos;
             }
@@ -351,8 +309,6 @@ impl FastOps {
                 .unwrap()
                 .point_prev_past_vara(&opnode);
             // Nones mean beginning of sequence, overwrite variable stuff
-            let opref = &self.ops[next_opnode_pos].as_ref().unwrap().op;
-            let (sel_a, sel_b) = (opref.vara, opref.varb);
             if prev_a.is_none() {
                 self.var_ends[vara].as_mut().unwrap().0 = next_opnode_pos;
             }
@@ -369,8 +325,6 @@ impl FastOps {
                 .as_mut()
                 .unwrap()
                 .point_next_past_varb(&opnode);
-            let opref = &self.ops[prev_opnode_pos].as_ref().unwrap().op;
-            let (sel_a, sel_b) = (opref.vara, opref.varb);
             // Nones mean end of sequence, should overwrite variable stuff.
             if next_b.is_none() {
                 self.var_ends[varb].as_mut().unwrap().1 = prev_opnode_pos;
@@ -386,8 +340,6 @@ impl FastOps {
                 .unwrap()
                 .point_prev_past_varb(&opnode);
             // Nones mean beginning of sequence, overwrite variable stuff
-            let opref = &self.ops[next_opnode_pos].as_ref().unwrap().op;
-            let (sel_a, sel_b) = (opref.vara, opref.varb);
             if prev_b.is_none() {
                 self.var_ends[varb].as_mut().unwrap().0 = next_opnode_pos;
             }
@@ -428,22 +380,22 @@ impl FastOps {
     fn get_ops_for_var(&self, var: usize) -> Vec<Op> {
         fn rec_traverse(
             var: usize,
-            ops: &[Option<FastOpNode>],
+            ops: &[Option<LiveOpNode>],
             mut acc: Vec<Op>,
-            opnode: Option<&FastOpNode>,
+            opnode: Option<&LiveOpNode>,
         ) -> Vec<Op> {
             match opnode {
                 None => acc,
                 Some(opnode) => {
-                    acc.push(opnode.op);
+                    acc.push(opnode.op.clone());
                     match (opnode.op.vara, opnode.op.varb) {
-                        (vara, varb) if vara == var => rec_traverse(
+                        (vara, _) if vara == var => rec_traverse(
                             var,
                             ops,
                             acc,
                             opnode.next_vara_op.map(|indx| ops[indx].as_ref().unwrap()),
                         ),
-                        (vara, varb) if varb == var => rec_traverse(
+                        (_, varb) if varb == var => rec_traverse(
                             var,
                             ops,
                             acc,
@@ -460,260 +412,6 @@ impl FastOps {
             vec![],
             self.var_ends[var].map(|(start, _)| self.ops[start].as_ref().unwrap()),
         )
-    }
-
-    pub fn make_diagonal_update_with_rng<H, E, R: Rng>(
-        &mut self,
-        cutoff: usize,
-        beta: f64,
-        state: &[bool],
-        hamiltonian: H,
-        num_edges: usize,
-        edges_fn: E,
-        rng: &mut R,
-    ) where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
-        E: Fn(usize) -> (usize, usize),
-    {
-        let mut state = state.to_vec();
-        // Start by editing the ops list
-        for p in 0..cutoff {
-            let op = self.get_pth(p);
-
-            let b = match op {
-                None => rng.gen_range(0, num_edges),
-                Some(op) if op.is_diagonal() => op.bond,
-                Some(Op {
-                    vara,
-                    varb,
-                    outputs,
-                    ..
-                }) => {
-                    state[vara] = outputs.0;
-                    state[varb] = outputs.1;
-                    continue;
-                }
-            };
-            let (vara, varb) = edges_fn(b);
-
-            let substate = (state[vara], state[varb]);
-            let mat_element = hamiltonian(vara, varb, b, substate, substate);
-            let numerator = beta * num_edges as f64 * mat_element;
-            let denominator = (cutoff - self.get_size()) as f64;
-
-            match op {
-                None => {
-                    let prob = numerator / denominator;
-                    if rng.gen::<f64>() < prob {
-                        let op = Op::diagonal(vara, varb, b, (state[vara], state[varb]));
-                        self.set_pth(p, Some(op));
-                    }
-                }
-                Some(op) if op.is_diagonal() => {
-                    let prob = (denominator + 1.0) / numerator;
-                    if rng.gen::<f64>() < prob {
-                        self.set_pth(p, None);
-                    }
-                }
-                _ => (),
-            };
-        }
-    }
-
-    pub fn make_diagonal_update<H, E>(
-        &mut self,
-        cutoff: usize,
-        beta: f64,
-        state: &[bool],
-        hamiltonian: H,
-        num_edges: usize,
-        edges_fn: E,
-    ) where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
-        E: Fn(usize) -> (usize, usize),
-    {
-        self.make_diagonal_update_with_rng(
-            cutoff,
-            beta,
-            state,
-            hamiltonian,
-            num_edges,
-            edges_fn,
-            &mut rand::thread_rng(),
-        )
-    }
-
-    pub fn make_loop_update_with_rng<H, R: Rng>(
-        &mut self,
-        initial_n: Option<usize>,
-        hamiltonian: H,
-        rng: &mut R,
-    ) -> Vec<(usize, bool)>
-    where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
-    {
-        let h = |op: Op, entrance: Leg, exit: Leg| -> f64 {
-            let (inputs, outputs) = adjust_states(op.inputs, op.outputs, entrance);
-            let (inputs, outputs) = adjust_states(inputs, outputs, exit);
-            // Call the supplied hamiltonian.
-            hamiltonian(op.vara, op.varb, op.bond, inputs, outputs)
-        };
-
-        let opnode = self
-            .p_ends
-            .map(|(p_start, _)| (p_start, self.ops[p_start].as_ref().unwrap()));
-        if let Some((p_start, opnode)) = opnode {
-            let initial_n = initial_n
-                .map(|n| min(n, self.n))
-                .unwrap_or_else(|| rng.gen_range(0, self.n));
-
-            let initial_opnode = (0..initial_n).fold(opnode, |acc, _| {
-                self.ops[acc.next_p_op.unwrap()].as_ref().unwrap()
-            });
-            // Get the starting leg (vara/b, top/bottom).
-            let initial_var = if rng.gen() { Variable::A } else { Variable::B };
-            let initial_direction = if rng.gen() {
-                OpSide::Inputs
-            } else {
-                OpSide::Outputs
-            };
-            let initial_leg = (initial_var, initial_direction);
-
-            let updates = self.recursive_looper(
-                (p_start, initial_leg),
-                p_start,
-                initial_leg,
-                h,
-                rng,
-                vec![None; self.var_ends.len()],
-            );
-            updates
-                .into_iter()
-                .enumerate()
-                .fold(vec![], |mut acc, (i, v)| {
-                    if let Some(v) = v {
-                        acc.push((i, v))
-                    };
-                    acc
-                })
-        } else {
-            vec![]
-        }
-    }
-
-    pub fn make_loop_update<H>(
-        &mut self,
-        initial_n: Option<usize>,
-        hamiltonian: H,
-    ) -> Vec<(usize, bool)>
-    where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
-    {
-        self.make_loop_update_with_rng(initial_n, hamiltonian, &mut rand::thread_rng())
-    }
-
-    fn recursive_looper<H, R: Rng>(
-        &mut self,
-        initial_op_and_leg: (usize, Leg),
-        sel_op_pos: usize,
-        entrance_leg: Leg,
-        h: H,
-        rng: &mut R,
-        mut acc: Vec<Option<bool>>,
-    ) -> Vec<Option<bool>>
-    where
-        H: Fn(Op, Leg, Leg) -> f64,
-    {
-        let sel_opnode = self.ops[sel_op_pos].as_mut().unwrap();
-        let sel_op = sel_opnode.op;
-        let weights = [
-            h(sel_op, entrance_leg, LEGS[0]),
-            h(sel_op, entrance_leg, LEGS[1]),
-            h(sel_op, entrance_leg, LEGS[2]),
-            h(sel_op, entrance_leg, LEGS[3]),
-        ];
-        let total_weight: f64 = weights.iter().sum();
-        let choice = rng.gen_range(0.0, total_weight);
-        let exit_leg = *weights
-            .iter()
-            .zip(LEGS.iter())
-            .try_fold(choice, |c, (weight, leg)| {
-                if c < *weight {
-                    Err(leg)
-                } else {
-                    Ok(c - *weight)
-                }
-            })
-            .unwrap_err();
-        let (inputs, outputs) =
-            adjust_states(sel_opnode.op.inputs, sel_opnode.op.outputs, entrance_leg);
-        let (inputs, outputs) = adjust_states(inputs, outputs, exit_leg);
-        // Change the op now that we passed through.
-        sel_opnode.op.inputs = inputs;
-        sel_opnode.op.outputs = outputs;
-        let sel_op = &sel_opnode.op;
-        let var_ends = &self.var_ends;
-
-        // Check if we closed the loop before going to next opnode.
-        if (sel_op_pos, exit_leg) == initial_op_and_leg {
-            acc
-        } else {
-            // Get the next opnode and entrance leg, let us know if it changes the initial/final.
-            let (next_op_pos, var_to_match) = match exit_leg {
-                (Variable::A, OpSide::Outputs) => {
-                    let next = sel_opnode.next_vara_op.unwrap_or_else(|| {
-                        acc[sel_op.vara] = Some(sel_op.outputs.0);
-                        var_ends[sel_op.vara].unwrap().0
-                    });
-                    (next, sel_op.vara)
-                }
-                (Variable::A, OpSide::Inputs) => {
-                    let next = sel_opnode.prev_vara_op.unwrap_or_else(|| {
-                        acc[sel_op.vara] = Some(sel_op.inputs.0);
-                        var_ends[sel_op.vara].unwrap().1
-                    });
-                    (next, sel_op.vara)
-                }
-                (Variable::B, OpSide::Outputs) => {
-                    let next = sel_opnode.next_varb_op.unwrap_or_else(|| {
-                        acc[sel_op.varb] = Some(sel_op.outputs.1);
-                        var_ends[sel_op.varb].unwrap().0
-                    });
-                    (next, sel_op.varb)
-                }
-                (Variable::B, OpSide::Inputs) => {
-                    let next = sel_opnode.prev_varb_op.unwrap_or_else(|| {
-                        acc[sel_op.varb] = Some(sel_op.inputs.1);
-                        var_ends[sel_op.varb].unwrap().1
-                    });
-                    (next, sel_op.varb)
-                }
-            };
-
-            let new_entrance_leg = match self.ops[next_op_pos].as_ref().map(|opnode| opnode.op) {
-                Some(Op { vara, .. }) if vara == var_to_match => {
-                    (Variable::A, exit_leg.1.reverse())
-                }
-                Some(Op { varb, .. }) if varb == var_to_match => {
-                    (Variable::B, exit_leg.1.reverse())
-                }
-                _ => unreachable!(),
-            };
-
-            // If back where we started, close loop and return state changes.
-            if (next_op_pos, new_entrance_leg) == initial_op_and_leg {
-                acc
-            } else {
-                self.recursive_looper(
-                    initial_op_and_leg,
-                    next_op_pos,
-                    new_entrance_leg,
-                    h,
-                    rng,
-                    acc,
-                )
-            }
-        }
     }
 
     fn p_matrix_weight<H>(&self, p: usize, h: &H) -> f64
@@ -749,56 +447,118 @@ impl FastOps {
         }
         t
     }
+}
 
-    pub fn debug_print<H>(&self, h: H)
-    where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
-    {
-        let mut last_p = 0;
-        let nvars = self.var_ends.len();
-        for i in 0..nvars {
-            print!("=");
+impl OpContainer for LiveOps {
+    fn get_n(&self) -> usize {
+        self.n
+    }
+
+    fn get_nvars(&self) -> usize {
+        self.var_ends.len()
+    }
+
+    fn get_pth(&self, p: usize) -> Option<&Op> {
+        if p >= self.ops.len() {
+            None
+        } else {
+            self.ops[p].as_ref().map(|opnode| &opnode.op)
         }
-        println!();
-        if let Some((p_start, p_end)) = self.p_ends {
-            let mut next_p = Some(p_start);
-            while next_p.is_some() {
-                let np = next_p.unwrap();
-                for p in last_p + 1..np {
-                    for i in 0..nvars {
-                        print!("|");
-                    }
-                    println!("\tp={}", p);
-                }
-                let op = self.ops[np].as_ref().unwrap();
-                for v in 0..op.op.vara {
-                    print!("|");
-                }
-                print!("{}", if op.op.inputs.0 { 1 } else { 0 });
-                for v in op.op.vara + 1..op.op.varb {
-                    print!("|");
-                }
-                print!("{}", if op.op.inputs.1 { 1 } else { 0 });
-                for v in op.op.varb + 1..nvars {
-                    print!("|");
-                }
-                println!("\tp={}\t\tW: {:?}", np, self.p_matrix_weight(np, &h));
+    }
+}
 
-                for v in 0..op.op.vara {
-                    print!("|");
-                }
-                print!("{}", if op.op.outputs.0 { 1 } else { 0 });
-                for v in op.op.vara + 1..op.op.varb {
-                    print!("|");
-                }
-                print!("{}", if op.op.outputs.1 { 1 } else { 0 });
-                for v in op.op.varb + 1..nvars {
-                    print!("|");
-                }
-                println!("\top: {:?}", &op);
-                last_p = np;
-                next_p = op.next_p_op;
+impl DiagonalUpdater for LiveOps {
+    fn set_pth(&mut self, p: usize, op: Option<Op>) -> Option<Op> {
+        self.set_min_size(p + 1);
+
+        // Check if we can do this efficiently
+        let opvars = op.as_ref().map(|op| (op.vara, op.varb));
+        let other_opvars = self.ops[p]
+            .as_ref()
+            .map(|opnode| (opnode.op.vara, opnode.op.varb));
+        match (opvars, other_opvars) {
+            (Some((vara, varb)), Some((varc, vard))) if vara == varc && varb == vard => {
+                return self.swap_pth(p, op);
             }
+            _ => (),
+        };
+
+        let old_opinfo = match self.ops[p].take() {
+            Some(opnode) => {
+                let retval = Some((opnode.op.clone(), opnode.prev_p_op, opnode.next_p_op));
+                self.untie_op_node(opnode);
+                retval
+            }
+            None => None,
+        };
+
+        // If we are just inserting an Identity (None), then we are done.
+        // Otherwise we need to insert some stuff.
+        if let Some(op) = &op {
+            // Makes an opnode for the op, ties it into the graph.
+            self.tie_op(p, op.clone(), old_opinfo.as_ref().map(|(_, p, n)| (*p, *n)))
+        };
+
+        if old_opinfo.is_some() {
+            self.n -= 1;
+        }
+        if op.is_some() {
+            self.n += 1;
+        }
+        old_opinfo.map(|(op, _, _)| op)
+    }
+}
+
+impl LoopUpdater<LiveOpNode> for LiveOps {
+    fn get_node_ref(&self, p: usize) -> Option<&LiveOpNode> {
+        self.ops[p].as_ref()
+    }
+
+    fn get_node_mut(&mut self, p: usize) -> Option<&mut LiveOpNode> {
+        self.ops[p].as_mut()
+    }
+
+    fn get_first_p(&self) -> Option<usize> {
+        self.p_ends.map(|(p, _)| p)
+    }
+
+    fn get_last_p(&self) -> Option<usize> {
+        self.p_ends.map(|(_, p)| p)
+    }
+
+    fn get_first_p_for_var(&self, var: usize) -> Option<usize> {
+        self.var_ends[var].map(|(p, _)| p)
+    }
+
+    fn get_last_p_for_var(&self, var: usize) -> Option<usize> {
+        self.var_ends[var].map(|(_, p)| p)
+    }
+
+    fn get_previous_p(&self, node: &LiveOpNode) -> Option<usize> {
+        node.prev_p_op
+    }
+
+    fn get_next_p(&self, node: &LiveOpNode) -> Option<usize> {
+        node.next_p_op
+    }
+
+    fn get_previous_p_for_var(&self, var: usize, node: &LiveOpNode) -> Option<usize> {
+        if var == node.op.vara {
+            node.prev_vara_op
+        } else if var == node.op.varb {
+            node.prev_varb_op
+        } else {
+            unreachable!()
+        }
+    }
+
+    fn get_next_p_for_var(&self, var: usize, node: &LiveOpNode) -> Option<usize> {
+        if var == node.op.vara {
+            node.next_vara_op
+        } else if var == node.op.varb {
+            node.next_varb_op
+        } else {
+            unreachable!()
         }
     }
 }
@@ -817,7 +577,7 @@ fn find_wrapping_indices_from_back<F: Fn(usize) -> usize>(
             // If equal to p it should have been removed during the untie phase.
             unreachable!()
         }
-        Some((p_start, p_end)) => {
+        Some((_, p_end)) => {
             // We know p_before can be unwrapped because p_start != p_end
             let (mut p_before, mut p_after) = (prev_fn(p_end), p_end);
             while p < p_before {
@@ -837,7 +597,7 @@ mod fastops_tests {
 
     #[test]
     fn add_single_item() {
-        let mut f = FastOps::new(2);
+        let mut f = LiveOps::new(2);
         let op = Op::diagonal(0, 1, 0, (true, true));
         f.set_pth(0, Some(op));
         println!("{:?}", f);
@@ -848,7 +608,7 @@ mod fastops_tests {
 
     #[test]
     fn add_unrelated_item() {
-        let mut f = FastOps::new(4);
+        let mut f = LiveOps::new(4);
         let opa = Op::diagonal(0, 1, 0, (true, true));
         let opb = Op::diagonal(2, 3, 1, (true, true));
         f.set_pth(0, Some(opa));
@@ -864,7 +624,7 @@ mod fastops_tests {
 
     #[test]
     fn add_identical_item() {
-        let mut f = FastOps::new(2);
+        let mut f = LiveOps::new(2);
         let opa = Op::diagonal(0, 1, 0, (true, true));
         f.set_pth(0, Some(opa));
         f.set_pth(1, Some(opa));
@@ -877,7 +637,7 @@ mod fastops_tests {
 
     #[test]
     fn add_overlapping_item() {
-        let mut f = FastOps::new(3);
+        let mut f = LiveOps::new(3);
         let opa = Op::diagonal(0, 1, 0, (true, true));
         let opb = Op::diagonal(1, 2, 0, (true, true));
         f.set_pth(0, Some(opa));
@@ -892,7 +652,7 @@ mod fastops_tests {
 
     #[test]
     fn add_skipping_item() {
-        let mut f = FastOps::new(3);
+        let mut f = LiveOps::new(3);
         let opa = Op::diagonal(0, 1, 0, (true, true));
         let opb = Op::diagonal(1, 2, 0, (true, true));
         f.set_pth(0, Some(opa));
@@ -907,7 +667,7 @@ mod fastops_tests {
 
     #[test]
     fn add_skipping_item_and_remove() {
-        let mut f = FastOps::new(3);
+        let mut f = LiveOps::new(3);
         let opa = Op::diagonal(0, 1, 0, (true, true));
         let opb = Op::diagonal(1, 2, 0, (true, true));
         f.set_pth(0, Some(opa));
@@ -923,7 +683,7 @@ mod fastops_tests {
 
     #[test]
     fn add_skipping_item_and_remove_first() {
-        let mut f = FastOps::new(3);
+        let mut f = LiveOps::new(3);
         let opa = Op::diagonal(0, 1, 0, (true, true));
         let opb = Op::diagonal(1, 2, 0, (true, true));
         f.set_pth(0, Some(opa));
@@ -939,7 +699,7 @@ mod fastops_tests {
 
     #[test]
     fn add_and_remove_all() {
-        let mut f = FastOps::new(3);
+        let mut f = LiveOps::new(3);
         f.set_pth(0, Some(Op::diagonal(0, 1, 0, (true, true))));
         f.set_pth(2, Some(Op::diagonal(1, 2, 0, (true, true))));
         f.set_pth(0, None);
@@ -953,7 +713,7 @@ mod fastops_tests {
 
     #[test]
     fn get_states_simple() {
-        let mut f = FastOps::new(3);
+        let mut f = LiveOps::new(3);
         f.set_pth(0, Some(Op::diagonal(0, 1, 0, (true, true))));
         f.set_pth(2, Some(Op::diagonal(1, 2, 0, (true, true))));
         println!("{:?}", f);
@@ -963,7 +723,7 @@ mod fastops_tests {
 
     #[test]
     fn get_states_offsimple() {
-        let mut f = FastOps::new(3);
+        let mut f = LiveOps::new(3);
         f.set_pth(
             0,
             Some(Op::offdiagonal(0, 1, 0, (false, true), (true, false))),
@@ -983,7 +743,7 @@ mod fastops_tests {
 
     #[test]
     fn test_loop_update() {
-        let mut f = FastOps::new(2);
+        let mut f = LiveOps::new(2);
         f.set_pth(0, Some(Op::diagonal(0, 1, 0, (false, false))));
         println!("{:?}", f);
         let updates = f.make_loop_update(
@@ -1002,7 +762,7 @@ mod fastops_tests {
 
     #[test]
     fn test_larger_loop_update() {
-        let mut f = FastOps::new(3);
+        let mut f = LiveOps::new(3);
         f.set_pth(0, Some(Op::diagonal(0, 1, 0, (false, false))));
         f.set_pth(1, Some(Op::diagonal(1, 2, 1, (false, false))));
 
@@ -1020,7 +780,7 @@ mod fastops_tests {
 
         let h = |_, _, _, _, _| 1.0;
 
-        let mut f = FastOps::new(3);
+        let mut f = LiveOps::new(3);
         let mut rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
         f.make_diagonal_update_with_rng(
             10,
@@ -1039,7 +799,7 @@ mod fastops_tests {
 
         let h = |_, _, _, _, _| 1.0;
 
-        let mut f = FastOps::new(3);
+        let mut f = LiveOps::new(3);
         let mut rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
         f.make_diagonal_update_with_rng(
             10,
