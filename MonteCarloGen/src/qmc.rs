@@ -3,6 +3,7 @@ use crate::qmc_traits::*;
 use crate::simple_ops::*;
 use rand::rngs::ThreadRng;
 use rand::Rng;
+use std::cmp::{min, max};
 
 pub struct QMCGraph<R: Rng> {
     edges: Vec<(Edge, f64)>,
@@ -43,15 +44,16 @@ impl<R: Rng> QMCGraph<R> {
     }
 
     pub fn timesteps(&mut self, t: u64, beta: f64) {
-        self.timesteps_measure(t, beta, (), |_, _, _| ());
+        self.timesteps_measure(t, beta, (), |_acc, _state, _weight| (), None);
     }
 
     pub fn timesteps_measure<F, T>(
         &mut self,
-        t: u64,
+        timesteps: u64,
         beta: f64,
         init_t: T,
         state_fold: F,
+        sampling_freq: Option<u64>
     ) -> (T, f64)
     where
         F: Fn(T, &[bool], f64) -> T,
@@ -79,7 +81,8 @@ impl<R: Rng> QMCGraph<R> {
 
         let mut acc = init_t;
         let mut total_weight = 0.0;
-        for _ in 0..t {
+        let sampling_freq = sampling_freq.unwrap_or(1);
+        for t in 0..timesteps {
             // Start by editing the ops list
             let mut manager = self.op_manager.take().unwrap();
             manager.make_diagonal_update_with_rng(
@@ -90,6 +93,7 @@ impl<R: Rng> QMCGraph<R> {
                 (edges.len(), |i| edges[i].0),
                 &mut self.rng,
             );
+            self.cutoff = max(self.cutoff, manager.get_n() + manager.get_n()/2);
 
             let mut manager = manager.convert_to_looper();
             // Now we can do loop updates easily.
@@ -104,9 +108,13 @@ impl<R: Rng> QMCGraph<R> {
                     *state = !*state;
                 }
             });
-            let weight = manager.weight(h);
-            acc = state_fold(acc, &state, weight);
-            total_weight += weight;
+
+            // Ignore first one.
+            if (t+1) % sampling_freq == 0 {
+                let weight = manager.weight(h);
+                acc = state_fold(acc, &state, weight);
+                total_weight += weight;
+            }
 
             self.op_manager = Some(manager.convert_to_diagonal());
         }

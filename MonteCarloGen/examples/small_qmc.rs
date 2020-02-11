@@ -47,7 +47,7 @@ fn run_quantum_monte_carlo_and_measure_spins(
                         .fold(0.0, |acc, b| if *b { acc + up_m } else { acc + down_m })
                         * weight
                         + acc
-                });
+                }, None);
             measure / weight
         })
         .collect()

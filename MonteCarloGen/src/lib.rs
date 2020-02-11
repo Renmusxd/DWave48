@@ -168,6 +168,7 @@ fn run_and_measure_helper_postprocess<F, G, I, T, U>(
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
     energy_offset: Option<f64>,
+    sampling_freq: Option<u64>,
     init: I,
     fold: F,
     post: G,
@@ -185,7 +186,7 @@ where
         .map(|_| {
             let gs = GraphState::new(&edges, &biases);
             let mut qmc_graph = qmc::new_qmc(gs, cutoff, offset);
-            let (measure, weight) = qmc_graph.timesteps_measure(timesteps as u64, beta, init(), fold);
+            let (measure, weight) = qmc_graph.timesteps_measure(timesteps as u64, beta, init(), fold, sampling_freq);
             post(measure, weight)
         })
         .collect()
@@ -198,6 +199,7 @@ fn run_and_measure_helper<F>(
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
     energy_offset: Option<f64>,
+    sampling_freq: Option<u64>,
     f: F,
 ) -> Vec<f64>
 where
@@ -210,6 +212,7 @@ where
         edges,
         biases,
         energy_offset,
+        sampling_freq,
         || 0.0,
         |acc, state, w| acc + w * f(state),
         |a, w| a / w,
@@ -224,6 +227,7 @@ fn run_and_measure_variance_helper<F>(
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
     energy_offset: Option<f64>,
+    sampling_freq: Option<u64>,
     f: F,
 ) -> Vec<(f64, f64)>
     where
@@ -236,6 +240,7 @@ fn run_and_measure_variance_helper<F>(
         edges,
         biases,
         energy_offset,
+        sampling_freq,
         || vec![],
         |mut acc, state, weight| {
             let m = f(state);
@@ -260,6 +265,7 @@ fn run_quantum_monte_carlo_and_measure_spins(
     biases: Vec<f64>,
     spin_measurement: Option<(f64, f64)>,
     energy_offset: Option<f64>,
+    sampling_freq: Option<u64>,
 ) -> Vec<f64> {
     let (down_m, up_m) = spin_measurement.unwrap_or((-1.0, 1.0));
     run_and_measure_helper(
@@ -269,6 +275,7 @@ fn run_quantum_monte_carlo_and_measure_spins(
         edges,
         biases,
         energy_offset,
+        sampling_freq,
         |state| {
             state
                 .iter()
@@ -287,6 +294,7 @@ fn run_quantum_monte_carlo_and_measure_spins_and_variance(
     biases: Vec<f64>,
     spin_measurement: Option<(f64, f64)>,
     energy_offset: Option<f64>,
+    sampling_freq: Option<u64>,
 ) -> Vec<(f64, f64)> {
     let (down_m, up_m) = spin_measurement.unwrap_or((-1.0, 1.0));
     run_and_measure_variance_helper(
@@ -296,6 +304,7 @@ fn run_quantum_monte_carlo_and_measure_spins_and_variance(
         edges,
         biases,
         energy_offset,
+        sampling_freq,
         |state| {
             state
                 .iter()
@@ -313,6 +322,7 @@ fn run_quantum_monte_carlo_and_measure_edges(
     biases: Vec<f64>,
     edge_measurement: (f64, f64, f64, f64),
     energy_offset: Option<f64>,
+    sampling_freq: Option<u64>,
 ) -> Vec<f64> {
     run_and_measure_helper(
         beta,
@@ -321,6 +331,7 @@ fn run_quantum_monte_carlo_and_measure_edges(
         edges.clone(),
         biases,
         energy_offset,
+        sampling_freq,
         |state| {
             edges.iter().fold(0.0, |acc, ((vara, varb), j)| {
                 acc + *j
@@ -344,6 +355,7 @@ fn run_quantum_monte_carlo_and_measure_edges_and_variance(
     biases: Vec<f64>,
     edge_measurement: (f64, f64, f64, f64),
     energy_offset: Option<f64>,
+    sampling_freq: Option<u64>,
 ) -> Vec<(f64, f64)> {
     run_and_measure_variance_helper(
         beta,
@@ -352,6 +364,7 @@ fn run_quantum_monte_carlo_and_measure_edges_and_variance(
         edges.clone(),
         biases,
         energy_offset,
+        sampling_freq,
         |state| {
             edges.iter().fold(0.0, |acc, ((vara, varb), j)| {
                 acc + *j
