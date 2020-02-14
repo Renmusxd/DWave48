@@ -6,7 +6,7 @@ use std::fmt::{Debug, Error, Formatter};
 
 #[derive(Debug)]
 pub(crate) struct LiveOpNode {
-    op: Op,
+    op: TwoSiteOp,
     prev_vara_op: Option<usize>,
     next_vara_op: Option<usize>,
     prev_varb_op: Option<usize>,
@@ -77,15 +77,15 @@ impl LiveOpNode {
 }
 
 impl OpNode for LiveOpNode {
-    fn get_op(&self) -> Op {
+    fn get_op(&self) -> TwoSiteOp {
         self.op.clone()
     }
 
-    fn get_op_ref(&self) -> &Op {
+    fn get_op_ref(&self) -> &TwoSiteOp {
         &self.op
     }
 
-    fn get_op_mut(&mut self) -> &mut Op {
+    fn get_op_mut(&mut self) -> &mut TwoSiteOp {
         &mut self.op
     }
 }
@@ -128,7 +128,7 @@ impl LiveOps {
         self.var_ends[var].is_some()
     }
 
-    pub(crate) fn swap_pth(&mut self, p: usize, op: Option<Op>) -> Option<Op> {
+    pub(crate) fn swap_pth(&mut self, p: usize, op: Option<TwoSiteOp>) -> Option<TwoSiteOp> {
         match (self.ops[p].as_mut(), op) {
             (None, None) => None,
             (Some(mut opnode), Some(op)) => {
@@ -140,7 +140,7 @@ impl LiveOps {
         }
     }
 
-    fn tie_op(&mut self, p: usize, op: Op, p_hints: Option<(Option<usize>, Option<usize>)>) {
+    fn tie_op(&mut self, p: usize, op: TwoSiteOp, p_hints: Option<(Option<usize>, Option<usize>)>) {
         let (vara, varb) = (op.vara, op.varb);
 
         // Get the previous and next ops
@@ -377,13 +377,13 @@ impl LiveOps {
         }
     }
 
-    fn get_ops_for_var(&self, var: usize) -> Vec<Op> {
+    fn get_ops_for_var(&self, var: usize) -> Vec<TwoSiteOp> {
         fn rec_traverse(
             var: usize,
             ops: &[Option<LiveOpNode>],
-            mut acc: Vec<Op>,
+            mut acc: Vec<TwoSiteOp>,
             opnode: Option<&LiveOpNode>,
-        ) -> Vec<Op> {
+        ) -> Vec<TwoSiteOp> {
             match opnode {
                 None => acc,
                 Some(opnode) => {
@@ -438,7 +438,7 @@ impl OpContainer for LiveOps {
         self.var_ends.len()
     }
 
-    fn get_pth(&self, p: usize) -> Option<&Op> {
+    fn get_pth(&self, p: usize) -> Option<&TwoSiteOp> {
         if p >= self.ops.len() {
             None
         } else {
@@ -468,7 +468,7 @@ impl OpContainer for LiveOps {
 }
 
 impl DiagonalUpdater for LiveOps {
-    fn set_pth(&mut self, p: usize, op: Option<Op>) -> Option<Op> {
+    fn set_pth(&mut self, p: usize, op: Option<TwoSiteOp>) -> Option<TwoSiteOp> {
         self.set_min_size(p + 1);
 
         // Check if we can do this efficiently
@@ -598,7 +598,7 @@ mod fastops_tests {
     #[test]
     fn add_single_item() {
         let mut f = LiveOps::new(2);
-        let op = Op::diagonal(0, 1, 0, (true, true));
+        let op = TwoSiteOp::diagonal(0, 1, 0, (true, true));
         f.set_pth(0, Some(op.clone()));
         println!("{:?}", f);
         assert_eq!(f.n, 1);
@@ -609,8 +609,8 @@ mod fastops_tests {
     #[test]
     fn add_unrelated_item() {
         let mut f = LiveOps::new(4);
-        let opa = Op::diagonal(0, 1, 0, (true, true));
-        let opb = Op::diagonal(2, 3, 1, (true, true));
+        let opa = TwoSiteOp::diagonal(0, 1, 0, (true, true));
+        let opb = TwoSiteOp::diagonal(2, 3, 1, (true, true));
         f.set_pth(0, Some(opa.clone()));
         f.set_pth(1, Some(opb.clone()));
         println!("{:?}", f);
@@ -625,7 +625,7 @@ mod fastops_tests {
     #[test]
     fn add_identical_item() {
         let mut f = LiveOps::new(2);
-        let opa = Op::diagonal(0, 1, 0, (true, true));
+        let opa = TwoSiteOp::diagonal(0, 1, 0, (true, true));
         f.set_pth(0, Some(opa.clone()));
         f.set_pth(1, Some(opa.clone()));
         println!("{:?}", f);
@@ -638,8 +638,8 @@ mod fastops_tests {
     #[test]
     fn add_overlapping_item() {
         let mut f = LiveOps::new(3);
-        let opa = Op::diagonal(0, 1, 0, (true, true));
-        let opb = Op::diagonal(1, 2, 0, (true, true));
+        let opa = TwoSiteOp::diagonal(0, 1, 0, (true, true));
+        let opb = TwoSiteOp::diagonal(1, 2, 0, (true, true));
         f.set_pth(0, Some(opa.clone()));
         f.set_pth(1, Some(opb.clone()));
         println!("{:?}", f);
@@ -653,8 +653,8 @@ mod fastops_tests {
     #[test]
     fn add_skipping_item() {
         let mut f = LiveOps::new(3);
-        let opa = Op::diagonal(0, 1, 0, (true, true));
-        let opb = Op::diagonal(1, 2, 0, (true, true));
+        let opa = TwoSiteOp::diagonal(0, 1, 0, (true, true));
+        let opb = TwoSiteOp::diagonal(1, 2, 0, (true, true));
         f.set_pth(0, Some(opa.clone()));
         f.set_pth(2, Some(opb.clone()));
         println!("{:?}", f);
@@ -668,8 +668,8 @@ mod fastops_tests {
     #[test]
     fn add_skipping_item_and_remove() {
         let mut f = LiveOps::new(3);
-        let opa = Op::diagonal(0, 1, 0, (true, true));
-        let opb = Op::diagonal(1, 2, 0, (true, true));
+        let opa = TwoSiteOp::diagonal(0, 1, 0, (true, true));
+        let opb = TwoSiteOp::diagonal(1, 2, 0, (true, true));
         f.set_pth(0, Some(opa.clone()));
         f.set_pth(2, Some(opb));
         f.set_pth(2, None);
@@ -684,8 +684,8 @@ mod fastops_tests {
     #[test]
     fn add_skipping_item_and_remove_first() {
         let mut f = LiveOps::new(3);
-        let opa = Op::diagonal(0, 1, 0, (true, true));
-        let opb = Op::diagonal(1, 2, 0, (true, true));
+        let opa = TwoSiteOp::diagonal(0, 1, 0, (true, true));
+        let opb = TwoSiteOp::diagonal(1, 2, 0, (true, true));
         f.set_pth(0, Some(opa));
         f.set_pth(2, Some(opb.clone()));
         f.set_pth(0, None);
@@ -700,8 +700,8 @@ mod fastops_tests {
     #[test]
     fn add_and_remove_all() {
         let mut f = LiveOps::new(3);
-        f.set_pth(0, Some(Op::diagonal(0, 1, 0, (true, true))));
-        f.set_pth(2, Some(Op::diagonal(1, 2, 0, (true, true))));
+        f.set_pth(0, Some(TwoSiteOp::diagonal(0, 1, 0, (true, true))));
+        f.set_pth(2, Some(TwoSiteOp::diagonal(1, 2, 0, (true, true))));
         f.set_pth(0, None);
         f.set_pth(2, None);
         println!("{:?}", f);
@@ -714,8 +714,8 @@ mod fastops_tests {
     #[test]
     fn get_states_simple() {
         let mut f = LiveOps::new(3);
-        f.set_pth(0, Some(Op::diagonal(0, 1, 0, (true, true))));
-        f.set_pth(2, Some(Op::diagonal(1, 2, 0, (true, true))));
+        f.set_pth(0, Some(TwoSiteOp::diagonal(0, 1, 0, (true, true))));
+        f.set_pth(2, Some(TwoSiteOp::diagonal(1, 2, 0, (true, true))));
         println!("{:?}", f);
         let states = f.get_p_states(&[true, false, true]);
         println!("{:?}", states);
@@ -726,15 +726,15 @@ mod fastops_tests {
         let mut f = LiveOps::new(3);
         f.set_pth(
             0,
-            Some(Op::offdiagonal(0, 1, 0, (false, true), (true, false))),
+            Some(TwoSiteOp::offdiagonal(0, 1, 0, (false, true), (true, false))),
         );
         f.set_pth(
             1,
-            Some(Op::offdiagonal(1, 2, 0, (false, true), (true, false))),
+            Some(TwoSiteOp::offdiagonal(1, 2, 0, (false, true), (true, false))),
         );
         f.set_pth(
             2,
-            Some(Op::offdiagonal(0, 2, 0, (false, true), (true, false))),
+            Some(TwoSiteOp::offdiagonal(0, 2, 0, (false, true), (true, false))),
         );
         println!("{:?}", f);
         let states = f.get_p_states(&[false, true, true]);
@@ -744,7 +744,7 @@ mod fastops_tests {
     #[test]
     fn test_loop_update() {
         let mut f = LiveOps::new(2);
-        f.set_pth(0, Some(Op::diagonal(0, 1, 0, (false, false))));
+        f.set_pth(0, Some(TwoSiteOp::diagonal(0, 1, 0, (false, false))));
         println!("{:?}", f);
         let updates = f.make_loop_update(
             Some(0),
@@ -763,8 +763,8 @@ mod fastops_tests {
     #[test]
     fn test_larger_loop_update() {
         let mut f = LiveOps::new(3);
-        f.set_pth(0, Some(Op::diagonal(0, 1, 0, (false, false))));
-        f.set_pth(1, Some(Op::diagonal(1, 2, 1, (false, false))));
+        f.set_pth(0, Some(TwoSiteOp::diagonal(0, 1, 0, (false, false))));
+        f.set_pth(1, Some(TwoSiteOp::diagonal(1, 2, 1, (false, false))));
 
         println!("{:?}", f);
         let mut rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);

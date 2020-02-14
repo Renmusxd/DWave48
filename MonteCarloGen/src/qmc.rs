@@ -4,10 +4,12 @@ use crate::simple_ops::*;
 use rand::rngs::ThreadRng;
 use rand::Rng;
 use std::cmp::{min, max};
+use std::io::Write;
 
 pub struct QMCGraph<R: Rng> {
     edges: Vec<(Edge, f64)>,
     biases: Vec<f64>,
+    transverse_fields: Vec<f64>,
     state: Option<Vec<bool>>,
     cutoff: usize,
     op_manager: Option<SimpleOpDiagonal>,
@@ -15,14 +17,15 @@ pub struct QMCGraph<R: Rng> {
     rng: R,
 }
 
-pub fn new_qmc(graph: GraphState, cutoff: usize, energy_offset: f64) -> QMCGraph<ThreadRng> {
+pub fn new_qmc(graph: GraphState, transverse_fields: Vec<f64>, cutoff: usize, energy_offset: f64) -> QMCGraph<ThreadRng> {
     let rng = rand::thread_rng();
-    QMCGraph::<ThreadRng>::new_with_rng(graph, cutoff, energy_offset, rng)
+    QMCGraph::<ThreadRng>::new_with_rng(graph, transverse_fields, cutoff, energy_offset, rng)
 }
 
 impl<R: Rng> QMCGraph<R> {
     pub fn new_with_rng<Rg: Rng>(
         graph: GraphState,
+        transverse_fields: Vec<f64>,
         cutoff: usize,
         energy_offset: f64,
         rng: Rg,
@@ -35,6 +38,7 @@ impl<R: Rng> QMCGraph<R> {
         QMCGraph::<Rg> {
             edges,
             biases,
+            transverse_fields,
             state,
             op_manager: Some(ops),
             cutoff,
@@ -59,10 +63,10 @@ impl<R: Rng> QMCGraph<R> {
         F: Fn(T, &[bool], f64) -> T,
     {
         let mut state = self.state.take().unwrap();
-
         let edges = &self.edges;
         let biases = &self.biases;
-        let offset = self.energy_offset;
+        let transverse_fields = &self.transverse_fields;
+        let energy_offset = self.energy_offset;
         let h = |vara: usize,
                  varb: usize,
                  bond: usize,
@@ -75,7 +79,8 @@ impl<R: Rng> QMCGraph<R> {
                 output_state,
                 edges,
                 biases,
-                offset,
+                transverse_fields,
+                energy_offset,
             )
         };
 
@@ -186,18 +191,26 @@ fn hamiltonian(
     output_state: (bool, bool),
     edges: &[(Edge, f64)],
     biases: &[f64],
+    transverse_fields: &[f64],
     offset: f64,
 ) -> f64 {
     let (vara, varb) = vars;
     let matentry = if input_state == output_state {
-        match input_state {
-            (false, false) => -edges[bond].1 + offset,
-            (false, true) => edges[bond].1 + biases[varb] + offset,
-            (true, false) => edges[bond].1 + biases[vara] + offset,
-            (true, true) => -edges[bond].1 + biases[vara] + biases[varb] + offset,
+        offset + match input_state {
+            (false, false) => -edges[bond].1,
+            (false, true) => edges[bond].1 + biases[varb],
+            (true, false) => edges[bond].1 + biases[vara],
+            (true, true) => -edges[bond].1 + biases[vara] + biases[varb],
         }
     } else {
-        0.0
+        let a_shift = input_state.0 ^ output_state.0;
+        let b_shift = input_state.1 ^ output_state.1;
+        match (a_shift, b_shift) {
+            (false, false) => unreachable!(),  // THis was handled above
+            (true, false) => transverse_fields[vara],
+            (false, true) => transverse_fields[varb],
+            (true, true) => 0.0,
+        }
     };
     assert!(matentry >= 0.0);
     matentry
@@ -212,7 +225,7 @@ mod qmc_tests {
     fn single_timestep() {
         let graph = GraphState::new(&[((0, 1), 1.0)], &[0.0, 0.0]);
         let rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
-        let mut qmc = QMCGraph::<ChaCha20Rng>::new_with_rng(graph, 10, 3.0, rng);
+        let mut qmc = QMCGraph::<ChaCha20Rng>::new_with_rng(graph, vec![0.0, 0.0], 10, 3.0, rng);
         qmc.timesteps(1, 1.0);
     }
 
@@ -223,7 +236,7 @@ mod qmc_tests {
             &[0.0, 0.0, 0.0, 0.0, 0.0],
         );
         let rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
-        let mut qmc = QMCGraph::<ChaCha20Rng>::new_with_rng(graph, 10, 3.0, rng);
+        let mut qmc = QMCGraph::<ChaCha20Rng>::new_with_rng(graph, vec![0.0, 0.0], 10, 3.0, rng);
         qmc.timesteps(1000, 1.0);
         println!("{:?}", qmc.into_vec())
     }

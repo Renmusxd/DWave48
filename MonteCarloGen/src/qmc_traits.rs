@@ -3,22 +3,22 @@ use rand::Rng;
 use std::cmp::min;
 
 pub trait OpNode {
-    fn get_op(&self) -> Op;
-    fn get_op_ref(&self) -> &Op;
-    fn get_op_mut(&mut self) -> &mut Op;
+    fn get_op(&self) -> TwoSiteOp;
+    fn get_op_ref(&self) -> &TwoSiteOp;
+    fn get_op_mut(&mut self) -> &mut TwoSiteOp;
 }
 
 pub trait OpContainer {
     fn get_n(&self) -> usize;
     fn get_nvars(&self) -> usize;
-    fn get_pth(&self, p: usize) -> Option<&Op>;
+    fn get_pth(&self, p: usize) -> Option<&TwoSiteOp>;
     fn weight<H>(&self, h: H) -> f64
     where
         H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64;
 }
 
 pub trait DiagonalUpdater: OpContainer {
-    fn set_pth(&mut self, p: usize, op: Option<Op>) -> Option<Op>;
+    fn set_pth(&mut self, p: usize, op: Option<TwoSiteOp>) -> Option<TwoSiteOp>;
 
     fn make_diagonal_update<H, E>(
         &mut self,
@@ -63,7 +63,7 @@ pub trait DiagonalUpdater: OpContainer {
             let b = match op {
                 None => rng.gen_range(0, num_edges),
                 Some(op) if op.is_diagonal() => op.bond,
-                Some(Op {
+                Some(TwoSiteOp {
                     vara,
                     varb,
                     outputs,
@@ -84,7 +84,7 @@ pub trait DiagonalUpdater: OpContainer {
             match op {
                 None => {
                     if numerator > denominator || rng.gen::<f64>() < (numerator / denominator) {
-                        let op = Op::diagonal(vara, varb, b, (state[vara], state[varb]));
+                        let op = TwoSiteOp::diagonal(vara, varb, b, (state[vara], state[varb]));
                         self.set_pth(p, Some(op));
                     }
                 }
@@ -158,7 +158,7 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
     where
         H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
     {
-        let h = |op: &Op, entrance: Leg, exit: Leg| -> f64 {
+        let h = |op: &TwoSiteOp, entrance: Leg, exit: Leg| -> f64 {
             let (inputs, outputs) = adjust_states(op.inputs, op.outputs, entrance);
             let (inputs, outputs) = adjust_states(inputs, outputs, exit);
             // Call the supplied hamiltonian.
@@ -211,7 +211,7 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
         mut acc: Vec<Option<bool>>,
     ) -> Vec<Option<bool>>
     where
-        H: Copy + Fn(&Op, Leg, Leg) -> f64,
+        H: Copy + Fn(&TwoSiteOp, Leg, Leg) -> f64,
     {
         loop {
             let res = self.loop_body(
@@ -242,7 +242,7 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
         acc: &mut [Option<bool>],
     ) -> LoopResult
     where
-        H: Fn(&Op, Leg, Leg) -> f64,
+        H: Fn(&TwoSiteOp, Leg, Leg) -> f64,
     {
         let sel_opnode = self.get_node_mut(sel_op_pos).unwrap();
         let sel_op = sel_opnode.get_op();
@@ -323,10 +323,10 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
 
             let next_node = self.get_node_ref(next_op_pos);
             let new_entrance_leg = match next_node.map(|opnode| opnode.get_op_ref()) {
-                Some(Op { vara, .. }) if *vara == var_to_match => {
+                Some(TwoSiteOp { vara, .. }) if *vara == var_to_match => {
                     (Variable::A, exit_leg.1.reverse())
                 }
-                Some(Op { varb, .. }) if *varb == var_to_match => {
+                Some(TwoSiteOp { varb, .. }) if *varb == var_to_match => {
                     (Variable::B, exit_leg.1.reverse())
                 }
                 _ => unreachable!(),

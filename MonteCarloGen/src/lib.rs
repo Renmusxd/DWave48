@@ -146,15 +146,17 @@ fn run_quantum_monte_carlo(
     num_experiments: u64,
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
+    transverse_field: Option<Vec<f64>>,
     energy_offset: Option<f64>,
 ) -> Vec<Vec<bool>> {
     let offset = energy_offset.unwrap_or_else(|| get_offset(&edges, &biases));
-    let cutoff = biases.len() * max(beta.round() as usize, 1);
+    let cutoff = biases.len();
+    let transverse_field = transverse_field.unwrap_or(vec![0.0; biases.len()]);
     (0..num_experiments)
         .into_par_iter()
         .map(|_| {
             let gs = GraphState::new(&edges, &biases);
-            let mut qmc_graph = qmc::new_qmc(gs, cutoff, offset);
+            let mut qmc_graph = qmc::new_qmc(gs, transverse_field.clone(), cutoff, offset);
             qmc_graph.timesteps(timesteps as u64, beta);
             qmc_graph.into_vec()
         })
@@ -167,6 +169,7 @@ fn run_and_measure_helper_postprocess<F, G, I, T, U>(
     num_experiments: u64,
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
+    transverse_field: Option<Vec<f64>>,
     energy_offset: Option<f64>,
     sampling_freq: Option<u64>,
     init: I,
@@ -180,12 +183,13 @@ where
     U: Send + Sync,
 {
     let offset = energy_offset.unwrap_or_else(|| get_offset(&edges, &biases));
-    let cutoff = biases.len() * max(beta.round() as usize, 1);
+    let cutoff = biases.len();
+    let transverse_field = transverse_field.unwrap_or(vec![0.0; biases.len()]);
     (0..num_experiments)
         .into_par_iter()
         .map(|_| {
             let gs = GraphState::new(&edges, &biases);
-            let mut qmc_graph = qmc::new_qmc(gs, cutoff, offset);
+            let mut qmc_graph = qmc::new_qmc(gs, transverse_field.clone(), cutoff, offset);
             let (measure, weight, steps_taken) = qmc_graph.timesteps_measure(timesteps as u64, beta, init(), fold, sampling_freq);
             post(measure, weight, steps_taken)
         })
@@ -198,6 +202,7 @@ fn run_and_measure_helper<F>(
     num_experiments: u64,
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
+    transverse_field: Option<Vec<f64>>,
     energy_offset: Option<f64>,
     sampling_freq: Option<u64>,
     f: F,
@@ -211,6 +216,7 @@ where
         num_experiments,
         edges,
         biases,
+        transverse_field,
         energy_offset,
         sampling_freq,
         || 0.0,
@@ -226,6 +232,7 @@ fn run_and_measure_variance_helper<F>(
     num_experiments: u64,
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
+    transverse_field: Option<Vec<f64>>,
     energy_offset: Option<f64>,
     sampling_freq: Option<u64>,
     f: F,
@@ -239,6 +246,7 @@ fn run_and_measure_variance_helper<F>(
         num_experiments,
         edges,
         biases,
+        transverse_field,
         energy_offset,
         sampling_freq,
         || vec![],
@@ -265,6 +273,7 @@ fn run_quantum_monte_carlo_and_measure_spins(
     num_experiments: u64,
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
+    transverse_field: Option<Vec<f64>>,
     spin_measurement: Option<(f64, f64)>,
     energy_offset: Option<f64>,
     sampling_freq: Option<u64>,
@@ -276,6 +285,7 @@ fn run_quantum_monte_carlo_and_measure_spins(
         num_experiments,
         edges,
         biases,
+        transverse_field,
         energy_offset,
         sampling_freq,
         |state| {
@@ -294,6 +304,7 @@ fn run_quantum_monte_carlo_and_measure_spins_and_variance(
     num_experiments: u64,
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
+    transverse_field: Option<Vec<f64>>,
     spin_measurement: Option<(f64, f64)>,
     energy_offset: Option<f64>,
     sampling_freq: Option<u64>,
@@ -305,6 +316,7 @@ fn run_quantum_monte_carlo_and_measure_spins_and_variance(
         num_experiments,
         edges,
         biases,
+        transverse_field,
         energy_offset,
         sampling_freq,
         |state| {
@@ -322,16 +334,19 @@ fn run_quantum_monte_carlo_and_measure_edges(
     num_experiments: u64,
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
-    edge_measurement: (f64, f64, f64, f64),
+    transverse_field: Option<Vec<f64>>,
+    edge_measurement: Option<(f64, f64, f64, f64)>,
     energy_offset: Option<f64>,
     sampling_freq: Option<u64>,
 ) -> Vec<f64> {
+    let edge_measurement = edge_measurement.unwrap_or((1.0, -1.0, -1.0, 1.0));
     run_and_measure_helper(
         beta,
         timesteps,
         num_experiments,
         edges.clone(),
         biases,
+        transverse_field,
         energy_offset,
         sampling_freq,
         |state| {
@@ -355,16 +370,19 @@ fn run_quantum_monte_carlo_and_measure_edges_and_variance(
     num_experiments: u64,
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
-    edge_measurement: (f64, f64, f64, f64),
+    transverse_field: Option<Vec<f64>>,
+    edge_measurement: Option<(f64, f64, f64, f64)>,
     energy_offset: Option<f64>,
     sampling_freq: Option<u64>,
 ) -> Vec<(f64, f64)> {
+    let edge_measurement = edge_measurement.unwrap_or((1.0, -1.0, -1.0, 1.0));
     run_and_measure_variance_helper(
         beta,
         timesteps,
         num_experiments,
         edges.clone(),
         biases,
+        transverse_field,
         energy_offset,
         sampling_freq,
         |state| {

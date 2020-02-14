@@ -1,8 +1,8 @@
 use crate::qmc_traits::*;
-use crate::qmc_types::Op;
+use crate::qmc_types::TwoSiteOp;
 
 pub struct SimpleOpDiagonal {
-    ops: Vec<Option<Op>>,
+    ops: Vec<Option<TwoSiteOp>>,
     n: usize,
     nvars: usize,
 }
@@ -101,7 +101,7 @@ impl OpContainer for SimpleOpDiagonal {
         self.nvars
     }
 
-    fn get_pth(&self, p: usize) -> Option<&Op> {
+    fn get_pth(&self, p: usize) -> Option<&TwoSiteOp> {
         if p >= self.ops.len() {
             None
         } else {
@@ -124,7 +124,7 @@ impl OpContainer for SimpleOpDiagonal {
 }
 
 impl DiagonalUpdater for SimpleOpDiagonal {
-    fn set_pth(&mut self, p: usize, op: Option<Op>) -> Option<Op> {
+    fn set_pth(&mut self, p: usize, op: Option<TwoSiteOp>) -> Option<TwoSiteOp> {
         self.set_min_size(p + 1);
         let temp = self.ops[p].take();
         self.ops[p] = op;
@@ -133,7 +133,7 @@ impl DiagonalUpdater for SimpleOpDiagonal {
 }
 
 pub struct SimpleOpNode {
-    op: Op,
+    op: TwoSiteOp,
     previous_p: Option<usize>,
     next_p: Option<usize>,
     previous_vara: Option<usize>,
@@ -143,7 +143,7 @@ pub struct SimpleOpNode {
 }
 
 impl SimpleOpNode {
-    fn new_empty(op: Op) -> Self {
+    fn new_empty(op: TwoSiteOp) -> Self {
         Self {
             op,
             previous_p: None,
@@ -157,15 +157,15 @@ impl SimpleOpNode {
 }
 
 impl OpNode for SimpleOpNode {
-    fn get_op(&self) -> Op {
+    fn get_op(&self) -> TwoSiteOp {
         self.op.clone()
     }
 
-    fn get_op_ref(&self) -> &Op {
+    fn get_op_ref(&self) -> &TwoSiteOp {
         &self.op
     }
 
-    fn get_op_mut(&mut self) -> &mut Op {
+    fn get_op_mut(&mut self) -> &mut TwoSiteOp {
         &mut self.op
     }
 }
@@ -199,7 +199,7 @@ impl OpContainer for SimpleOpLooper {
         self.var_ends.len()
     }
 
-    fn get_pth(&self, p: usize) -> Option<&Op> {
+    fn get_pth(&self, p: usize) -> Option<&TwoSiteOp> {
         self.ops[p].as_ref().map(|opnode| &opnode.op)
     }
 
