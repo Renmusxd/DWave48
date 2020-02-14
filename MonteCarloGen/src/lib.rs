@@ -176,7 +176,7 @@ fn run_and_measure_helper_postprocess<F, G, I, T, U>(
 where
     I: Copy + Send + Sync + Fn() -> T,
     F: Copy + Send + Sync + Fn(T, &[bool], f64) -> T,
-    G: Copy + Send + Sync + Fn(T, f64) -> U,
+    G: Copy + Send + Sync + Fn(T, f64, usize) -> U,
     U: Send + Sync,
 {
     let offset = energy_offset.unwrap_or_else(|| get_offset(&edges, &biases));
@@ -186,8 +186,8 @@ where
         .map(|_| {
             let gs = GraphState::new(&edges, &biases);
             let mut qmc_graph = qmc::new_qmc(gs, cutoff, offset);
-            let (measure, weight) = qmc_graph.timesteps_measure(timesteps as u64, beta, init(), fold, sampling_freq);
-            post(measure, weight)
+            let (measure, weight, steps_taken) = qmc_graph.timesteps_measure(timesteps as u64, beta, init(), fold, sampling_freq);
+            post(measure, weight, steps_taken)
         })
         .collect()
 }
@@ -214,8 +214,8 @@ where
         energy_offset,
         sampling_freq,
         || 0.0,
-        |acc, state, w| acc + w * f(state),
-        |a, w| a / w,
+        |acc, state, w| acc + f(state),
+        |a, _w, l| a / l as f64,
     )
 }
 
@@ -244,14 +244,16 @@ fn run_and_measure_variance_helper<F>(
         || vec![],
         |mut acc, state, weight| {
             let m = f(state);
-            acc.push((m, weight));
+            acc.push(m);
             acc
         },
-        |acc, weight| {
-            let prod = acc.iter().map(|(m, w)| m*w).sum::<f64>();
-            let mean = prod/weight;
-            let variance = acc.into_iter().map(|(m, w)| w*(m - mean).powi(2)).sum::<f64>() / weight;
-            (prod/weight, variance)
+        |acc, weight, length| {
+            let len = length as f64;
+            let prod = acc.iter().map(|m| m).sum::<f64>();
+            let mean = prod/ len;
+            let variance = acc.into_iter().map(|m| (m - mean).powi(2)).sum::<f64>();
+            let variance= variance / len;
+            (mean, variance)
         }
     )
 }

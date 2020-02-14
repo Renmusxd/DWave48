@@ -40,15 +40,14 @@ fn run_quantum_monte_carlo_and_measure_spins(
         .map(|_| {
             let gs = GraphState::new(&edges, &biases);
             let mut qmc_graph = new_qmc(gs, cutoff, offset);
-            let (measure, weight) =
+            let (measure, weight, steps_measured) =
                 qmc_graph.timesteps_measure(timesteps as u64, beta, 0.0, |acc, state, weight| {
                     state
                         .iter()
                         .fold(0.0, |acc, b| if *b { acc + up_m } else { acc + down_m })
-                        * weight
                         + acc
                 }, None);
-            measure / weight
+            measure / steps_measured as f64
         })
         .collect()
 }
