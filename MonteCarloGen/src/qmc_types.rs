@@ -1,6 +1,6 @@
 
 pub enum Op {
-    Single(OneSiteOp), Double(TwoSiteOp)
+    Identity, Single(OneSiteOp), Double(TwoSiteOp)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -3,22 +3,22 @@ use rand::Rng;
 use std::cmp::min;
 
 pub trait OpNode {
-    fn get_op(&self) -> TwoSiteOp;
-    fn get_op_ref(&self) -> &TwoSiteOp;
-    fn get_op_mut(&mut self) -> &mut TwoSiteOp;
+    fn get_op(&self) -> Op;
+    fn get_op_ref(&self) -> &Op;
+    fn get_op_mut(&mut self) -> &mut Op;
 }
 
 pub trait OpContainer {
     fn get_n(&self) -> usize;
     fn get_nvars(&self) -> usize;
-    fn get_pth(&self, p: usize) -> Option<&TwoSiteOp>;
+    fn get_pth(&self, p: usize) -> &Op;
     fn weight<H>(&self, h: H) -> f64
     where
         H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64;
 }
 
 pub trait DiagonalUpdater: OpContainer {
-    fn set_pth(&mut self, p: usize, op: Option<TwoSiteOp>) -> Option<TwoSiteOp>;
+    fn set_pth(&mut self, p: usize, op: Op) -> Op;
 
     fn make_diagonal_update<H, E>(
         &mut self,
@@ -59,11 +59,23 @@ pub trait DiagonalUpdater: OpContainer {
         // Start by editing the ops list
         for p in 0..cutoff {
             let op = self.get_pth(p);
-
-            let b = match op {
-                None => rng.gen_range(0, num_edges),
-                Some(op) if op.is_diagonal() => op.bond,
-                Some(TwoSiteOp {
+            match op {
+                Op::Identity => {
+                    let b = rng.gen_range(0, num_edges);
+                    // TODO implement https://arxiv.org/pdf/1812.05326.pdf equation 8
+                    unimplemented!()
+                },
+                Op::Single(op) if op.is_diagonal() => {
+                    // TODO implement https://arxiv.org/pdf/1812.05326.pdf equation 8
+                }
+                Op::Double(op) if op.is_diagonal() => {
+                    let b = op.bond;
+                    // TODO implement https://arxiv.org/pdf/1812.05326.pdf equation 8
+                    // perform_two_site_update(self, TwoSiteInfo::Op(op), cutoff, beta, &state, &hamiltonian, (num_edges, &edges_fn));
+                    unimplemented!()
+                },
+                // Off diagonal terms will change the state for later.
+                Op::Double(TwoSiteOp {
                     vara,
                     varb,
                     outputs,
@@ -73,32 +85,63 @@ pub trait DiagonalUpdater: OpContainer {
                     state[*varb] = outputs.1;
                     continue;
                 }
-            };
-            let (vara, varb) = edges_fn(b);
-
-            let substate = (state[vara], state[varb]);
-            let mat_element = hamiltonian(vara, varb, b, substate, substate);
-            let numerator = beta * num_edges as f64 * mat_element;
-            let denominator = (cutoff - self.get_n()) as f64;
-
-            match op {
-                None => {
-                    if numerator > denominator || rng.gen::<f64>() < (numerator / denominator) {
-                        let op = TwoSiteOp::diagonal(vara, varb, b, (state[vara], state[varb]));
-                        self.set_pth(p, Some(op));
-                    }
+                Op::Single(OneSiteOp {
+                               var,
+                               output,
+                               ..
+                           }) => {
+                    state[*var] = *output;
+                    continue;
                 }
-                Some(op) if op.is_diagonal() => {
-                    if denominator + 1.0 > numerator
-                        || rng.gen::<f64>() < ((denominator + 1.0) / numerator)
-                    {
-                        self.set_pth(p, None);
-                    }
-                }
-                _ => (),
             };
         }
     }
+}
+
+enum TwoSiteInfo<'a> {
+    Op(&'a TwoSiteOp), Bond(usize)
+}
+
+fn perform_two_site_update<D: DiagonalUpdater, H, E>(
+    diag_updater: &mut D,
+    opinfo: TwoSiteInfo,
+    cutoff: usize,
+    beta: f64,
+    state: &[bool],
+    hamiltonian: H,
+    edges: (usize, E)) where
+    H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
+    E: Fn(usize) -> (usize, usize),
+{
+    let b = match opinfo {
+        TwoSiteInfo::Op(op) => op.bond,
+        TwoSiteInfo::Bond(b) => b
+    };
+
+    let (num_edges, edges_fn) = edges;
+    let (vara, varb) = edges_fn(b);
+
+    let substate = (state[vara], state[varb]);
+    let mat_element = hamiltonian(vara, varb, b, substate, substate);
+    let numerator = beta * num_edges as f64 * mat_element;
+    let denominator = (cutoff - diag_updater.get_n()) as f64;
+
+    match op {
+        TwoSiteInfo::Bond => {
+            if numerator > denominator || rng.gen::<f64>() < (numerator / denominator) {
+                let op = TwoSiteOp::diagonal(vara, varb, b, (state[vara], state[varb]));
+                diag_updater.set_pth(p, Op::Diagonal(op));
+            }
+        }
+        TwoSiteInfo::Op(op) if op.is_diagonal() => {
+            if denominator + 1.0 > numerator
+                || rng.gen::<f64>() < ((denominator + 1.0) / numerator)
+            {
+                diag_updater.set_pth(p, Op::Identity);
+            }
+        }
+        _ => (),
+    };
 }
 
 pub enum LoopResult {
@@ -232,17 +275,19 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
         }
     }
 
-    fn loop_body<H, R: Rng>(
+    fn loop_body<H, SH, R: Rng>(
         &mut self,
         initial_op_and_leg: (usize, Leg),
         sel_op_pos: usize,
         entrance_leg: Leg,
         h: H,
+        sh: SH,
         rng: &mut R,
         acc: &mut [Option<bool>],
     ) -> LoopResult
     where
         H: Fn(&TwoSiteOp, Leg, Leg) -> f64,
+        SH: Fn(&OneSiteOp, OpSide, OpSide) -> f64,
     {
         let sel_opnode = self.get_node_mut(sel_op_pos).unwrap();
         let sel_op = sel_opnode.get_op();
