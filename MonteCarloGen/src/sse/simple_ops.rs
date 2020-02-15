@@ -1,5 +1,5 @@
-use crate::qmc_traits::*;
-use crate::qmc_types::TwoSiteOp;
+use crate::sse::qmc_traits::*;
+use crate::sse::qmc_types::TwoSiteOp;
 
 pub struct SimpleOpDiagonal {
     ops: Vec<Option<TwoSiteOp>>,
