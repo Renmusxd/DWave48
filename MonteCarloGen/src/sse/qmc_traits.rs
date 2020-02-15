@@ -1,4 +1,4 @@
-use crate::qmc_types::*;
+use crate::sse::qmc_types::*;
 use rand::Rng;
 use std::cmp::min;
 

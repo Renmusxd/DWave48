@@ -1,7 +1,7 @@
 extern crate monte_carlo;
 use monte_carlo::get_offset;
 use monte_carlo::graph::GraphState;
-use monte_carlo::qmc::new_qmc;
+use monte_carlo::sse::qmc::new_qmc;
 use std::cmp::max;
 
 fn run_quantum_monte_carlo(

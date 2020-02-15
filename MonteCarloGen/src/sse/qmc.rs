@@ -1,10 +1,9 @@
 use crate::graph::{Edge, GraphState};
-use crate::qmc_traits::*;
-use crate::simple_ops::*;
+use crate::sse::qmc_traits::*;
+use crate::sse::simple_ops::*;
 use rand::rngs::ThreadRng;
 use rand::Rng;
-use std::cmp::{min, max};
-use std::io::Write;
+use std::cmp::max;
 
 pub struct QMCGraph<R: Rng> {
     edges: Vec<(Edge, f64)>,

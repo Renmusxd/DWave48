@@ -1,13 +1,10 @@
 pub mod graph;
-pub mod live_ops;
-pub mod qmc;
-pub mod qmc_traits;
-pub mod qmc_types;
-pub mod simple_ops;
+pub mod sse;
+pub mod path_integral;
+use sse::qmc;
 use graph::*;
 use pyo3::prelude::*;
 use rayon::prelude::*;
-use std::cmp::max;
 
 #[pyfunction]
 fn run_monte_carlo(
@@ -220,7 +217,7 @@ where
         energy_offset,
         sampling_freq,
         || 0.0,
-        |acc, state, w| acc + f(state),
+        |acc, state, _w| acc + f(state),
         |a, _w, l| a / l as f64,
     )
 }
@@ -250,12 +247,12 @@ fn run_and_measure_variance_helper<F>(
         energy_offset,
         sampling_freq,
         || vec![],
-        |mut acc, state, weight| {
+        |mut acc, state, _w| {
             let m = f(state);
             acc.push(m);
             acc
         },
-        |acc, weight, length| {
+        |acc, _w, length| {
             let len = length as f64;
             let prod = acc.iter().map(|m| m).sum::<f64>();
             let mean = prod/ len;

@@ -1,8 +1,8 @@
 extern crate num;
-use crate::qmc_traits::*;
-use crate::qmc_types::*;
 use std::cmp::{max, min};
 use std::fmt::{Debug, Error, Formatter};
+use crate::sse::qmc_types::*;
+use crate::sse::qmc_traits::*;
 
 #[derive(Debug)]
 pub(crate) struct LiveOpNode {
