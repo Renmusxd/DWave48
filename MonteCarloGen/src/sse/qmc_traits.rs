@@ -13,8 +13,8 @@ pub trait OpContainer {
     fn get_nvars(&self) -> usize;
     fn get_pth(&self, p: usize) -> &Op;
     fn weight<H>(&self, h: H) -> f64
-    where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64;
+        where
+            H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64;
 }
 
 pub trait DiagonalUpdater: OpContainer {
@@ -76,11 +76,11 @@ pub trait DiagonalUpdater: OpContainer {
                 },
                 // Off diagonal terms will change the state for later.
                 Op::Double(TwoSiteOp {
-                    vara,
-                    varb,
-                    outputs,
-                    ..
-                }) => {
+                               vara,
+                               varb,
+                               outputs,
+                               ..
+                           }) => {
                     state[*vara] = outputs.0;
                     state[*varb] = outputs.1;
                     continue;
@@ -186,8 +186,8 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
         initial_n: Option<usize>,
         hamiltonian: H,
     ) -> Vec<(usize, bool)>
-    where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
+        where
+            H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
     {
         self.make_loop_update_with_rng(initial_n, hamiltonian, &mut rand::thread_rng())
     }
@@ -198,8 +198,8 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
         hamiltonian: H,
         rng: &mut R,
     ) -> Vec<(usize, bool)>
-    where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
+        where
+            H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
     {
         let h = |op: &TwoSiteOp, entrance: Leg, exit: Leg| -> f64 {
             let (inputs, outputs) = adjust_states(op.inputs, op.outputs, entrance);
@@ -253,8 +253,8 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
         rng: &mut R,
         mut acc: Vec<Option<bool>>,
     ) -> Vec<Option<bool>>
-    where
-        H: Copy + Fn(&TwoSiteOp, Leg, Leg) -> f64,
+        where
+            H: Copy + Fn(&TwoSiteOp, Leg, Leg) -> f64,
     {
         loop {
             let res = self.loop_body(
@@ -285,9 +285,9 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
         rng: &mut R,
         acc: &mut [Option<bool>],
     ) -> LoopResult
-    where
-        H: Fn(&TwoSiteOp, Leg, Leg) -> f64,
-        SH: Fn(&OneSiteOp, OpSide, OpSide) -> f64,
+        where
+            H: Fn(&TwoSiteOp, Leg, Leg) -> f64,
+            SH: Fn(&OneSiteOp, OpSide, OpSide) -> f64,
     {
         let sel_opnode = self.get_node_mut(sel_op_pos).unwrap();
         let sel_op = sel_opnode.get_op();
