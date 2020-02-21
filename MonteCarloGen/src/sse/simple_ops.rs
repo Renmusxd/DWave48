@@ -1,8 +1,8 @@
 use crate::sse::qmc_traits::*;
-use crate::sse::qmc_types::TwoSiteOp;
+use crate::sse::qmc_types::Op;
 
 pub struct SimpleOpDiagonal {
-    ops: Vec<Option<TwoSiteOp>>,
+    ops: Vec<Option<Op>>,
     n: usize,
     nvars: usize,
 }
@@ -47,41 +47,23 @@ impl SimpleOpDiagonal {
                         p_ends.as_mut().unwrap().1 = p;
 
                         let this_opnode = opnodes[p].as_mut().unwrap();
+
                         this_opnode.previous_p = Some(last_p);
                     }
                 }
-                match var_ends[op.vara] {
-                    None => var_ends[op.vara] = Some((p, p)),
-                    Some((_, last_p)) => {
-                        let last_op = opnodes[last_p].as_mut().unwrap();
-                        if last_op.op.vara == op.vara {
-                            last_op.next_vara = Some(p);
-                        } else if last_op.op.varb == op.vara {
-                            last_op.next_varb = Some(p);
-                        } else {
-                            unreachable!()
+                op.vars.iter().cloned().enumerate().for_each(|(indx, v)| {
+                    match var_ends[v] {
+                        None => var_ends[v] = Some((p, p)),
+                        Some((_, last_p)) => {
+                            let last_op = opnodes[last_p].as_mut().unwrap();
+                            let last_relvar = last_op.op.index_of_var(v).unwrap();
+                            last_op.next_for_vars[last_relvar] = Some(p);
+                            var_ends[v].as_mut().unwrap().1 = p;
+                            let this_opnode = opnodes[p].as_mut().unwrap();
+                            this_opnode.previous_for_vars[indx] = Some(last_p);
                         }
-                        var_ends[op.vara].as_mut().unwrap().1 = p;
-                        let this_opnode = opnodes[p].as_mut().unwrap();
-                        this_opnode.previous_vara = Some(last_p);
                     }
-                }
-                match var_ends[op.varb] {
-                    None => var_ends[op.varb] = Some((p, p)),
-                    Some((_, last_p)) => {
-                        let last_op = opnodes[last_p].as_mut().unwrap();
-                        if last_op.op.vara == op.varb {
-                            last_op.next_vara = Some(p);
-                        } else if last_op.op.varb == op.varb {
-                            last_op.next_varb = Some(p);
-                        } else {
-                            unreachable!()
-                        }
-                        var_ends[op.varb].as_mut().unwrap().1 = p;
-                        let this_opnode = opnodes[p].as_mut().unwrap();
-                        this_opnode.previous_varb = Some(last_p);
-                    }
-                }
+                })
             });
         SimpleOpLooper {
             ops: opnodes,
@@ -101,7 +83,7 @@ impl OpContainer for SimpleOpDiagonal {
         self.nvars
     }
 
-    fn get_pth(&self, p: usize) -> Option<&TwoSiteOp> {
+    fn get_pth(&self, p: usize) -> Option<&Op> {
         if p >= self.ops.len() {
             None
         } else {
@@ -111,20 +93,20 @@ impl OpContainer for SimpleOpDiagonal {
 
     fn weight<H>(&self, h: H) -> f64
     where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
+        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
     {
         self.ops
             .iter()
             .filter(|op| op.is_some())
             .fold(1.0, |t, op| {
                 let op = op.as_ref().unwrap();
-                h(op.vara, op.varb, op.bond, op.inputs, op.outputs) * t
+                h(&op.vars, op.bond, &op.inputs, &op.outputs) * t
             })
     }
 }
 
 impl DiagonalUpdater for SimpleOpDiagonal {
-    fn set_pth(&mut self, p: usize, op: Option<TwoSiteOp>) -> Option<TwoSiteOp> {
+    fn set_pth(&mut self, p: usize, op: Option<Op>) -> Option<Op> {
         self.set_min_size(p + 1);
         let temp = self.ops[p].take();
         self.ops[p] = op;
@@ -133,39 +115,36 @@ impl DiagonalUpdater for SimpleOpDiagonal {
 }
 
 pub struct SimpleOpNode {
-    op: TwoSiteOp,
+    op: Op,
     previous_p: Option<usize>,
     next_p: Option<usize>,
-    previous_vara: Option<usize>,
-    next_vara: Option<usize>,
-    previous_varb: Option<usize>,
-    next_varb: Option<usize>,
+    previous_for_vars: Vec<Option<usize>>,
+    next_for_vars: Vec<Option<usize>>,
 }
 
 impl SimpleOpNode {
-    fn new_empty(op: TwoSiteOp) -> Self {
+    fn new_empty(op: Op) -> Self {
+        let nvars = op.vars.len();
         Self {
             op,
             previous_p: None,
             next_p: None,
-            previous_vara: None,
-            next_vara: None,
-            previous_varb: None,
-            next_varb: None,
+            previous_for_vars: vec![None; nvars],
+            next_for_vars: vec![None; nvars],
         }
     }
 }
 
 impl OpNode for SimpleOpNode {
-    fn get_op(&self) -> TwoSiteOp {
+    fn get_op(&self) -> Op {
         self.op.clone()
     }
 
-    fn get_op_ref(&self) -> &TwoSiteOp {
+    fn get_op_ref(&self) -> &Op {
         &self.op
     }
 
-    fn get_op_mut(&mut self) -> &mut TwoSiteOp {
+    fn get_op_mut(&mut self) -> &mut Op {
         &mut self.op
     }
 }
@@ -199,24 +178,23 @@ impl OpContainer for SimpleOpLooper {
         self.var_ends.len()
     }
 
-    fn get_pth(&self, p: usize) -> Option<&TwoSiteOp> {
+    fn get_pth(&self, p: usize) -> Option<&Op> {
         self.ops[p].as_ref().map(|opnode| &opnode.op)
     }
 
     fn weight<H>(&self, h: H) -> f64
     where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
+        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
     {
         let mut t = 1.0;
         let mut p = self.p_ends.map(|(p, _)| p);
         while p.is_some() {
             let op = self.ops[p.unwrap()].as_ref().unwrap();
             t *= h(
-                op.op.vara,
-                op.op.varb,
+                &op.op.vars,
                 op.op.bond,
-                op.op.inputs,
-                op.op.outputs,
+                &op.op.inputs,
+                &op.op.outputs,
             );
             p = op.next_p;
         }
@@ -257,24 +235,12 @@ impl LoopUpdater<SimpleOpNode> for SimpleOpLooper {
         node.next_p
     }
 
-    fn get_previous_p_for_var(&self, var: usize, node: &SimpleOpNode) -> Option<usize> {
-        if var == node.op.vara {
-            node.previous_vara
-        } else if var == node.op.varb {
-            node.previous_varb
-        } else {
-            unreachable!()
-        }
+    fn get_previous_p_for_rel_var(&self, revar: usize, node: &SimpleOpNode) -> Option<usize> {
+        node.previous_for_vars[revar]
     }
 
-    fn get_next_p_for_var(&self, var: usize, node: &SimpleOpNode) -> Option<usize> {
-        if var == node.op.vara {
-            node.next_vara
-        } else if var == node.op.varb {
-            node.next_varb
-        } else {
-            unreachable!()
-        }
+    fn get_next_p_for_rel_var(&self, revar: usize, node: &SimpleOpNode) -> Option<usize> {
+        node.next_for_vars[revar]
     }
 
     fn get_nth_p(&self, n: usize) -> usize {

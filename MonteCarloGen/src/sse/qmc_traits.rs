@@ -3,24 +3,24 @@ use rand::Rng;
 use std::cmp::min;
 
 pub trait OpNode {
-    fn get_op(&self) -> TwoSiteOp;
-    fn get_op_ref(&self) -> &TwoSiteOp;
-    fn get_op_mut(&mut self) -> &mut TwoSiteOp;
+    fn get_op(&self) -> Op;
+    fn get_op_ref(&self) -> &Op;
+    fn get_op_mut(&mut self) -> &mut Op;
 }
 
 pub trait OpContainer {
     fn get_n(&self) -> usize;
     fn get_nvars(&self) -> usize;
-    fn get_pth(&self, p: usize) -> Option<&TwoSiteOp>;
+    fn get_pth(&self, p: usize) -> Option<&Op>;
     fn weight<H>(&self, h: H) -> f64
     where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64;
+        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64;
 }
 
 pub trait DiagonalUpdater: OpContainer {
-    fn set_pth(&mut self, p: usize, op: Option<TwoSiteOp>) -> Option<TwoSiteOp>;
+    fn set_pth(&mut self, p: usize, op: Option<Op>) -> Option<Op>;
 
-    fn make_diagonal_update<H, E>(
+    fn make_diagonal_update<'b, H, E>(
         &mut self,
         cutoff: usize,
         beta: f64,
@@ -29,8 +29,8 @@ pub trait DiagonalUpdater: OpContainer {
         num_edges: usize,
         edges_fn: E,
     ) where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
-        E: Fn(usize) -> (usize, usize),
+        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
+        E: Fn(usize) -> &'b[usize],
     {
         self.make_diagonal_update_with_rng(
             cutoff,
@@ -42,7 +42,7 @@ pub trait DiagonalUpdater: OpContainer {
         )
     }
 
-    fn make_diagonal_update_with_rng<H, E, R: Rng>(
+    fn make_diagonal_update_with_rng<'b, H, E, R: Rng>(
         &mut self,
         cutoff: usize,
         beta: f64,
@@ -51,8 +51,8 @@ pub trait DiagonalUpdater: OpContainer {
         edges: (usize, E),
         rng: &mut R,
     ) where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
-        E: Fn(usize) -> (usize, usize),
+        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
+        E: Fn(usize) -> &'b[usize],
     {
         let mut state = state.to_vec();
         let (num_edges, edges_fn) = edges;
@@ -63,28 +63,27 @@ pub trait DiagonalUpdater: OpContainer {
             let b = match op {
                 None => rng.gen_range(0, num_edges),
                 Some(op) if op.is_diagonal() => op.bond,
-                Some(TwoSiteOp {
-                    vara,
-                    varb,
+                Some(Op {
+                    vars,
                     outputs,
                     ..
                 }) => {
-                    state[*vara] = outputs.0;
-                    state[*varb] = outputs.1;
+                    vars.iter().zip(outputs.iter()).for_each(|(v, b)| {
+                       state[*v] = *b
+                    });
                     continue;
                 }
             };
-            let (vara, varb) = edges_fn(b);
-
-            let substate = (state[vara], state[varb]);
-            let mat_element = hamiltonian(vara, varb, b, substate, substate);
+            let vars = edges_fn(b);
+            let substate = vars.iter().map(|v| state[*v]).collect::<Vec<_>>();
+            let mat_element = hamiltonian(vars, b, &substate, &substate);
             let numerator = beta * num_edges as f64 * mat_element;
             let denominator = (cutoff - self.get_n()) as f64;
 
             match op {
                 None => {
                     if numerator > denominator || rng.gen::<f64>() < (numerator / denominator) {
-                        let op = TwoSiteOp::diagonal(vara, varb, b, (state[vara], state[varb]));
+                        let op = Op::diagonal(vars.to_vec(), b, substate);
                         self.set_pth(p, Some(op));
                     }
                 }
@@ -118,8 +117,25 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
     fn get_previous_p(&self, node: &Node) -> Option<usize>;
     fn get_next_p(&self, node: &Node) -> Option<usize>;
 
-    fn get_previous_p_for_var(&self, var: usize, node: &Node) -> Option<usize>;
-    fn get_next_p_for_var(&self, var: usize, node: &Node) -> Option<usize>;
+    fn get_previous_p_for_rel_var(&self, relvar: usize, node: &Node) -> Option<usize>;
+    fn get_next_p_for_rel_var(&self, relvar: usize, node: &Node) -> Option<usize>;
+
+    fn get_previous_p_for_var(&self, var: usize, node: &Node) -> Result<Option<usize>, ()> {
+        let relvar = node.get_op_ref().index_of_var(var);
+        if let Some(relvar) = relvar {
+            Ok(self.get_previous_p_for_rel_var(relvar, node))
+        } else {
+            Err(())
+        }
+    }
+    fn get_next_p_for_var(&self, var: usize, node: &Node) -> Result<Option<usize>, ()> {
+        let relvar = node.get_op_ref().index_of_var(var);
+        if let Some(relvar) = relvar {
+            Ok(self.get_next_p_for_rel_var(relvar, node))
+        } else {
+            Err(())
+        }
+    }
 
     fn get_nth_p(&self, n: usize) -> usize {
         let acc = self
@@ -144,7 +160,7 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
         hamiltonian: H,
     ) -> Vec<(usize, bool)>
     where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
+        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
     {
         self.make_loop_update_with_rng(initial_n, hamiltonian, &mut rand::thread_rng())
     }
@@ -156,13 +172,13 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
         rng: &mut R,
     ) -> Vec<(usize, bool)>
     where
-        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
+        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
     {
-        let h = |op: &TwoSiteOp, entrance: Leg, exit: Leg| -> f64 {
-            let (inputs, outputs) = adjust_states(op.inputs, op.outputs, entrance);
+        let h = |op: &Op, entrance: Leg, exit: Leg| -> f64 {
+            let (inputs, outputs) = adjust_states(op.inputs.clone(), op.outputs.clone(), entrance);
             let (inputs, outputs) = adjust_states(inputs, outputs, exit);
             // Call the supplied hamiltonian.
-            hamiltonian(op.vara, op.varb, op.bond, inputs, outputs)
+            hamiltonian(&op.vars, op.bond, &inputs, &outputs)
         };
 
         if self.get_n() > 0 {
@@ -170,8 +186,10 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
                 .map(|n| min(n, self.get_n()))
                 .unwrap_or_else(|| rng.gen_range(0, self.get_n()));
             let nth_p = self.get_nth_p(initial_n);
-            // Get the starting leg (vara/b, top/bottom).
-            let initial_var = if rng.gen() { Variable::A } else { Variable::B };
+            // Get starting leg for pth op.
+            let op = self.get_node_ref(nth_p).unwrap();
+            let n_vars = op.get_op_ref().vars.len();
+            let initial_var = rng.gen_range(0, n_vars);
             let initial_direction = if rng.gen() {
                 OpSide::Inputs
             } else {
@@ -211,7 +229,7 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
         mut acc: Vec<Option<bool>>,
     ) -> Vec<Option<bool>>
     where
-        H: Copy + Fn(&TwoSiteOp, Leg, Leg) -> f64,
+        H: Copy + Fn(&Op, Leg, Leg) -> f64,
     {
         loop {
             let res = self.loop_body(
@@ -242,21 +260,20 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
         acc: &mut [Option<bool>],
     ) -> LoopResult
     where
-        H: Fn(&TwoSiteOp, Leg, Leg) -> f64,
+        H: Fn(&Op, Leg, Leg) -> f64,
     {
         let sel_opnode = self.get_node_mut(sel_op_pos).unwrap();
         let sel_op = sel_opnode.get_op();
-        let weights = [
-            h(&sel_op, entrance_leg, LEGS[0]),
-            h(&sel_op, entrance_leg, LEGS[1]),
-            h(&sel_op, entrance_leg, LEGS[2]),
-            h(&sel_op, entrance_leg, LEGS[3]),
-        ];
+
+        let inputs_legs = (0 .. sel_op.vars.len()).map(|v| (v, OpSide::Inputs));
+        let outputs_legs = (0 .. sel_op.vars.len()).map(|v| (v, OpSide::Outputs));
+        let legs = inputs_legs.chain(outputs_legs).collect::<Vec<_>>();
+        let weights = legs.iter().map(|leg| h(&sel_op, entrance_leg, *leg)).collect::<Vec<_>>();
         let total_weight: f64 = weights.iter().sum();
         let choice = rng.gen_range(0.0, total_weight);
         let exit_leg = *weights
             .iter()
-            .zip(LEGS.iter())
+            .zip(legs.iter())
             .try_fold(choice, |c, (weight, leg)| {
                 if c < *weight {
                     Err(leg)
@@ -266,8 +283,8 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
             })
             .unwrap_err();
         let (inputs, outputs) = adjust_states(
-            sel_opnode.get_op_ref().inputs,
-            sel_opnode.get_op_ref().outputs,
+            sel_opnode.get_op_ref().inputs.clone(),
+            sel_opnode.get_op_ref().outputs.clone(),
             entrance_leg,
         );
         let (inputs, outputs) = adjust_states(inputs, outputs, exit_leg);
@@ -287,50 +304,27 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
         } else {
             // Get the next opnode and entrance leg, let us know if it changes the initial/final.
             let (next_op_pos, var_to_match) = match exit_leg {
-                (Variable::A, OpSide::Outputs) => {
-                    let next_vara_op = self.get_next_p_for_var(sel_op.vara, sel_opnode);
-                    let next = next_vara_op.unwrap_or_else(|| {
-                        acc[sel_op.vara] = Some(sel_op.outputs.0);
-                        self.get_first_p_for_var(sel_op.vara).unwrap()
+                (var, OpSide::Outputs) => {
+                    let next_var_op = self.get_next_p_for_rel_var(var, sel_opnode);
+                    let next = next_var_op.unwrap_or_else(|| {
+                        acc[sel_op.vars[var]] = Some(sel_op.outputs[var]);
+                        self.get_first_p_for_var(sel_op.vars[var]).unwrap()
                     });
-                    (next, sel_op.vara)
+                    (next, sel_op.vars[var])
                 }
-                (Variable::A, OpSide::Inputs) => {
-                    let prev_vara_op = self.get_previous_p_for_var(sel_op.vara, sel_opnode);
-                    let next = prev_vara_op.unwrap_or_else(|| {
-                        acc[sel_op.vara] = Some(sel_op.inputs.0);
-                        self.get_last_p_for_var(sel_op.vara).unwrap()
+                (var, OpSide::Inputs) => {
+                    let prev_var_op = self.get_previous_p_for_rel_var(var, sel_opnode);
+                    let next = prev_var_op.unwrap_or_else(|| {
+                        acc[sel_op.vars[var]] = Some(sel_op.inputs[var]);
+                        self.get_last_p_for_var(sel_op.vars[var]).unwrap()
                     });
-                    (next, sel_op.vara)
-                }
-                (Variable::B, OpSide::Outputs) => {
-                    let next_varb_op = self.get_next_p_for_var(sel_op.varb, sel_opnode);
-                    let next = next_varb_op.unwrap_or_else(|| {
-                        acc[sel_op.varb] = Some(sel_op.outputs.1);
-                        self.get_first_p_for_var(sel_op.varb).unwrap()
-                    });
-                    (next, sel_op.varb)
-                }
-                (Variable::B, OpSide::Inputs) => {
-                    let prev_varb_op = self.get_previous_p_for_var(sel_op.varb, sel_opnode);
-                    let next = prev_varb_op.unwrap_or_else(|| {
-                        acc[sel_op.varb] = Some(sel_op.inputs.1);
-                        self.get_last_p_for_var(sel_op.varb).unwrap()
-                    });
-                    (next, sel_op.varb)
+                    (next, sel_op.vars[var])
                 }
             };
 
-            let next_node = self.get_node_ref(next_op_pos);
-            let new_entrance_leg = match next_node.map(|opnode| opnode.get_op_ref()) {
-                Some(TwoSiteOp { vara, .. }) if *vara == var_to_match => {
-                    (Variable::A, exit_leg.1.reverse())
-                }
-                Some(TwoSiteOp { varb, .. }) if *varb == var_to_match => {
-                    (Variable::B, exit_leg.1.reverse())
-                }
-                _ => unreachable!(),
-            };
+            let next_node = self.get_node_ref(next_op_pos).unwrap();
+            let next_var_index = next_node.get_op_ref().index_of_var(var_to_match).unwrap();
+            let new_entrance_leg = (next_var_index, exit_leg.1.reverse());
 
             // If back where we started, close loop and return state changes.
             if (next_op_pos, new_entrance_leg) == initial_op_and_leg {
@@ -343,7 +337,7 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
 }
 //fn debug_print_looper<L: LoopUpdater<Node>, Node: OpNode, H>(looper: L, h: H)
 //    where
-//        H: Fn(usize, usize, usize, (bool, bool), (bool, bool)) -> f64,
+//        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
 //{
 //    let mut last_p = 0;
 //    let nvars = looper.get_nvars();

@@ -1,93 +1,51 @@
 
-pub enum Op {
-    Single(OneSiteOp), Double(TwoSiteOp)
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OneSiteOp {
-    pub var: usize,
-    pub input: bool,
-    pub output: bool
-}
-
-impl OneSiteOp {
-    pub fn diagonal(var: usize, state: bool) -> Self {
-        Self {
-            var,
-            input: state,
-            output: state
-        }
-    }
-    pub fn offdiagonal(
-        var: usize,
-        input: bool,
-        output: bool
-    ) -> Self {
-        Self {
-            var,
-            input,
-            output,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TwoSiteOp {
-    pub vara: usize,
-    pub varb: usize,
+pub struct Op {
+    pub vars: Vec<usize>,
     pub bond: usize,
-    pub inputs: (bool, bool),
-    pub outputs: (bool, bool),
+    pub inputs: Vec<bool>,
+    pub outputs: Vec<bool>,
 }
 
-impl TwoSiteOp {
-    pub fn diagonal(vara: usize, varb: usize, bond: usize, state: (bool, bool)) -> Self {
+impl Op {
+    pub fn diagonal(vars: Vec<usize>, bond: usize, state: Vec<bool>) -> Self {
         Self {
-            vara,
-            varb,
+            vars,
             bond,
-            inputs: state,
+            inputs: state.clone(),
             outputs: state,
         }
     }
+
     pub fn offdiagonal(
-        vara: usize,
-        varb: usize,
+        vars: Vec<usize>,
         bond: usize,
-        inputs: (bool, bool),
-        outputs: (bool, bool),
+        inputs: Vec<bool>,
+        outputs: Vec<bool>,
     ) -> Self {
         Self {
-            vara,
-            varb,
+            vars,
             bond,
             inputs,
             outputs,
         }
     }
-}
 
-pub trait CheckDiagOp {
-    fn is_diagonal(&self) -> bool;
-}
-
-impl CheckDiagOp for OneSiteOp {
-    fn is_diagonal(&self) -> bool {
-        self.input == self.output
+    pub fn index_of_var(&self, var: usize) -> Option<usize> {
+        let res = self.vars.iter().enumerate().try_for_each(|(indx, v)| if *v == var {
+            Err(indx)
+        } else {
+            Ok(())
+        });
+        match res {
+            Ok(_) => None,
+            Err(v) => Some(v)
+        }
     }
-}
 
-
-impl CheckDiagOp for TwoSiteOp {
-    fn is_diagonal(&self) -> bool {
+    pub fn is_diagonal(&self) -> bool {
         self.inputs == self.outputs
     }
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Debug)]
-pub enum Variable {
-    A,
-    B,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
@@ -105,35 +63,20 @@ impl OpSide {
     }
 }
 
-pub type Leg = (Variable, OpSide);
-
-pub static LEGS: [Leg; 4] = [
-    (Variable::A, OpSide::Inputs),
-    (Variable::A, OpSide::Outputs),
-    (Variable::B, OpSide::Inputs),
-    (Variable::B, OpSide::Outputs),
-];
+pub type Leg = (usize, OpSide);
 
 pub fn adjust_states(
-    before: (bool, bool),
-    after: (bool, bool),
+    mut before: Vec<bool>,
+    mut after: Vec<bool>,
     leg: Leg,
-) -> ((bool, bool), (bool, bool)) {
-    let (mut a_bef, mut b_bef) = before;
-    let (mut a_aft, mut b_aft) = after;
+) -> (Vec<bool>, Vec<bool>) {
     match leg {
-        (Variable::A, OpSide::Inputs) => {
-            a_bef = !a_bef;
+        (var, OpSide::Inputs) => {
+            before[var] = !before[var];
         }
-        (Variable::A, OpSide::Outputs) => {
-            a_aft = !a_aft;
-        }
-        (Variable::B, OpSide::Inputs) => {
-            b_bef = !b_bef;
-        }
-        (Variable::B, OpSide::Outputs) => {
-            b_aft = !b_aft;
+        (var, OpSide::Outputs) => {
+            after[var] = !after[var];
         }
     };
-    ((a_bef, b_bef), (a_aft, b_aft))
+    (before, after)
 }
