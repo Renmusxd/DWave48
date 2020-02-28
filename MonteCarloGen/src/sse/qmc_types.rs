@@ -1,4 +1,3 @@
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Op {
     pub vars: Vec<usize>,
@@ -32,14 +31,14 @@ impl Op {
     }
 
     pub fn index_of_var(&self, var: usize) -> Option<usize> {
-        let res = self.vars.iter().enumerate().try_for_each(|(indx, v)| if *v == var {
-            Err(indx)
-        } else {
-            Ok(())
-        });
+        let res =
+            self.vars
+                .iter()
+                .enumerate()
+                .try_for_each(|(indx, v)| if *v == var { Err(indx) } else { Ok(()) });
         match res {
             Ok(_) => None,
-            Err(v) => Some(v)
+            Err(v) => Some(v),
         }
     }
 

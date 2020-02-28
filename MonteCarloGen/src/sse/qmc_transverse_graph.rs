@@ -16,7 +16,12 @@ pub struct QMCTransverseGraph<R: Rng> {
     rng: R,
 }
 
-pub fn new_transverse_qmc(graph: GraphState, transverse: f64, cutoff: usize, energy_offset: f64) -> QMCTransverseGraph<ThreadRng> {
+pub fn new_transverse_qmc(
+    graph: GraphState,
+    transverse: f64,
+    cutoff: usize,
+    energy_offset: f64,
+) -> QMCTransverseGraph<ThreadRng> {
     let rng = rand::thread_rng();
     QMCTransverseGraph::<ThreadRng>::new_with_rng(graph, transverse, cutoff, energy_offset, rng)
 }
@@ -29,8 +34,11 @@ impl<R: Rng> QMCTransverseGraph<R> {
         energy_offset: f64,
         rng: Rg,
     ) -> QMCTransverseGraph<Rg> {
-        let edges = graph.edges.into_iter().map(|((a,b), j)| (vec![a, b], j)).collect::<Vec<_>>();
-        let biases = graph.biases;
+        let edges = graph
+            .edges
+            .into_iter()
+            .map(|((a, b), j)| (vec![a, b], j))
+            .collect::<Vec<_>>();
         let state = graph.state;
         let mut ops = SimpleOpDiagonal::new(state.as_ref().map_or(0, |s| s.len()));
         ops.set_min_size(cutoff);
@@ -55,7 +63,7 @@ impl<R: Rng> QMCTransverseGraph<R> {
         beta: f64,
         init_t: T,
         state_fold: F,
-        sampling_freq: Option<u64>
+        sampling_freq: Option<u64>,
     ) -> (T, f64, usize)
     where
         F: Fn(T, &[bool], f64) -> T,
@@ -64,10 +72,7 @@ impl<R: Rng> QMCTransverseGraph<R> {
         let edges = &self.edges;
         let transverse = self.transverse;
         let energy_offset = self.energy_offset;
-        let h = |vars: &[usize],
-                 bond: usize,
-                 input_state: &[bool],
-                 output_state: &[bool]| {
+        let h = |vars: &[usize], bond: usize, input_state: &[bool], output_state: &[bool]| {
             hamiltonian(
                 (vars[0], vars[1]),
                 (input_state[0], input_state[1]),
@@ -93,7 +98,7 @@ impl<R: Rng> QMCTransverseGraph<R> {
                 (edges.len(), |i| &edges[i].0),
                 &mut self.rng,
             );
-            self.cutoff = max(self.cutoff, manager.get_n() + manager.get_n()/2);
+            self.cutoff = max(self.cutoff, manager.get_n() + manager.get_n() / 2);
 
             let mut manager = manager.convert_to_looper();
             // Now we can do loop updates easily.
@@ -110,7 +115,7 @@ impl<R: Rng> QMCTransverseGraph<R> {
             });
 
             // Ignore first one.
-            if (t+1) % sampling_freq == 0 {
+            if (t + 1) % sampling_freq == 0 {
                 let weight = manager.weight(h);
                 acc = state_fold(acc, &state, weight);
                 total_weight += weight;
@@ -130,76 +135,50 @@ impl<R: Rng> QMCTransverseGraph<R> {
     pub fn into_vec(self) -> Vec<bool> {
         self.state.unwrap()
     }
-    //
-    // pub fn debug_print(&self) {
-    //    let edges = &self.edges;
-    //    let biases = &self.biases;
-    //    let offset = self.energy_offset;
-    //    let h = |vara: usize,
-    //             varb: usize,
-    //             bond: usize,
-    //             input_state: (bool, bool),
-    //             output_state: (bool, bool)| {
-    //        hamiltonian(
-    //            vara,
-    //            varb,
-    //            bond,
-    //            input_state,
-    //            output_state,
-    //            edges,
-    //            biases,
-    //            offset,
-    //        )
-    //    };
-    //    self.op_manager.debug_print(h)
-    // }
-    //
-    //    pub fn mat_element(&self) -> f64 {
-    //        let edges = &self.edges;
-    //        let biases = &self.biases;
-    //        let offset = self.energy_offset;
-    //        let h = |vara: usize,
-    //                 varb: usize,
-    //                 bond: usize,
-    //                 input_state: (bool, bool),
-    //                 output_state: (bool, bool)| {
-    //            hamiltonian(
-    //                vara,
-    //                varb,
-    //                bond,
-    //                input_state,
-    //                output_state,
-    //                edges,
-    //                biases,
-    //                offset,
-    //            )
-    //        };
-    //        self.op_manager.total_matrix_weight(h)
-    //    }
+
+    pub fn debug_print(&self) {
+        let offset = self.energy_offset;
+        let transverse = self.transverse;
+        let edges = &self.edges;
+        let h = |vars: &[usize], bond: usize, input_state: &[bool], output_state: &[bool]| {
+            hamiltonian(
+                (vars[0], vars[1]),
+                (input_state[0], input_state[1]),
+                (output_state[0], output_state[1]),
+                edges[bond].1,
+                transverse,
+                offset,
+            )
+        };
+        self.op_manager.as_ref().map(|opm| opm.debug_print(h));
+    }
 }
 
 fn hamiltonian(
-    vars: (usize, usize),
+    _vars: (usize, usize),
     input_state: (bool, bool),
     output_state: (bool, bool),
     binding: f64,
     transverse: f64,
     offset: f64,
 ) -> f64 {
-    let (vara, varb) = vars;
     let matentry = if input_state == output_state {
-        offset + match input_state {
-            (false, false) => 0.0,
-            (false, true) => transverse,
-            (true, false) => transverse,
-            (true, true) => 2.0*transverse,
-        }
+        offset
+            + match input_state {
+                (false, false) => -2.0 * transverse,
+                (false, true) => 0.0,
+                (true, false) => 0.0,
+                (true, true) => 2.0 * transverse,
+            }
     } else {
-        let diff = (input_state.0 == output_state.0, input_state.1 == output_state.1);
-        offset + match diff {
-            (false, false) => 0.0,
-            (false, true) => binding,
-            (true, false) => binding,
+        let diff = (
+            input_state.0 == output_state.0,
+            input_state.1 == output_state.1,
+        );
+        match diff {
+            (false, false) => binding,
+            (false, true) => 0.0,
+            (true, false) => 0.0,
             (true, true) => unreachable!(),
         }
     };

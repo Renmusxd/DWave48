@@ -1,9 +1,11 @@
 pub mod graph;
 pub mod sse;
-use sse::qmc_graph;
+use crate::sse::qmc_transverse_graph::new_transverse_qmc;
 use graph::*;
 use pyo3::prelude::*;
 use rayon::prelude::*;
+use sse::qmc_graph;
+use std::cmp::max;
 
 #[pyfunction]
 fn run_monte_carlo(
@@ -182,7 +184,8 @@ where
         .map(|_| {
             let gs = GraphState::new(&edges, &biases);
             let mut qmc_graph = qmc_graph::new_qmc(gs, cutoff, offset);
-            let (measure, weight, steps_taken) = qmc_graph.timesteps_measure(timesteps as u64, beta, init(), fold, sampling_freq);
+            let (measure, weight, steps_taken) =
+                qmc_graph.timesteps_measure(timesteps as u64, beta, init(), fold, sampling_freq);
             post(measure, weight, steps_taken)
         })
         .collect()
@@ -215,7 +218,6 @@ where
     )
 }
 
-
 fn run_and_measure_variance_helper<F>(
     beta: f64,
     timesteps: usize,
@@ -226,8 +228,8 @@ fn run_and_measure_variance_helper<F>(
     sampling_freq: Option<u64>,
     f: F,
 ) -> Vec<(f64, f64)>
-    where
-        F: Copy + Send + Sync + Fn(&[bool]) -> f64,
+where
+    F: Copy + Send + Sync + Fn(&[bool]) -> f64,
 {
     run_and_measure_helper_postprocess(
         beta,
@@ -246,11 +248,11 @@ fn run_and_measure_variance_helper<F>(
         |acc, _w, length| {
             let len = length as f64;
             let prod = acc.iter().map(|m| m).sum::<f64>();
-            let mean = prod/ len;
+            let mean = prod / len;
             let variance = acc.into_iter().map(|m| (m - mean).powi(2)).sum::<f64>();
-            let variance= variance / len;
+            let variance = variance / len;
             (mean, variance)
-        }
+        },
     )
 }
 
@@ -281,7 +283,6 @@ fn run_quantum_monte_carlo_and_measure_spins(
         },
     )
 }
-
 
 #[pyfunction]
 fn run_quantum_monte_carlo_and_measure_spins_and_variance(
@@ -335,11 +336,11 @@ fn run_quantum_monte_carlo_and_measure_edges(
             edges.iter().fold(0.0, |acc, ((vara, varb), j)| {
                 acc + *j
                     * match (state[*vara], state[*varb]) {
-                    (false, false) => edge_measurement.0,
-                    (false, true) => edge_measurement.1,
-                    (true, false) => edge_measurement.2,
-                    (true, true) => edge_measurement.3,
-                }
+                        (false, false) => edge_measurement.0,
+                        (false, true) => edge_measurement.1,
+                        (true, false) => edge_measurement.2,
+                        (true, true) => edge_measurement.3,
+                    }
             })
         },
     )
@@ -369,14 +370,73 @@ fn run_quantum_monte_carlo_and_measure_edges_and_variance(
             edges.iter().fold(0.0, |acc, ((vara, varb), j)| {
                 acc + *j
                     * match (state[*vara], state[*varb]) {
-                    (false, false) => edge_measurement.0,
-                    (false, true) => edge_measurement.1,
-                    (true, false) => edge_measurement.2,
-                    (true, true) => edge_measurement.3,
-                }
+                        (false, false) => edge_measurement.0,
+                        (false, true) => edge_measurement.1,
+                        (true, false) => edge_measurement.2,
+                        (true, true) => edge_measurement.3,
+                    }
             })
         },
     )
+}
+
+#[pyfunction]
+fn run_transverse_quantum_monte_carlo(
+    beta: f64,
+    timesteps: usize,
+    num_experiments: u64,
+    edges: Vec<((usize, usize), f64)>,
+    nvars: usize,
+    transverse: f64,
+    energy_offset: Option<f64>,
+) -> Vec<Vec<bool>> {
+    let biases = vec![0.0; nvars];
+    let offset = energy_offset.unwrap_or_else(|| get_offset(&edges, &biases));
+    (0..num_experiments)
+        .map(|_| {
+            let gs = GraphState::new(&edges, &biases);
+            let cutoff = biases.len() * max(beta.round() as usize, 1);
+            let mut qmc_graph = new_transverse_qmc(gs, transverse, cutoff, offset);
+            qmc_graph.timesteps(timesteps as u64, beta);
+            qmc_graph.into_vec()
+        })
+        .collect()
+}
+
+#[pyfunction]
+fn run_transverse_quantum_monte_carlo_and_measure_spins(
+    beta: f64,
+    timesteps: usize,
+    num_experiments: u64,
+    edges: Vec<((usize, usize), f64)>,
+    nvars: usize,
+    transverse: f64,
+    spin_measurement: Option<(f64, f64)>,
+    energy_offset: Option<f64>,
+) -> Vec<f64> {
+    let biases = vec![0.0; nvars];
+    let offset = energy_offset.unwrap_or_else(|| get_offset(&edges, &biases));
+    let cutoff = biases.len();
+    let (down_m, up_m) = spin_measurement.unwrap_or((-1.0, 1.0));
+    (0..num_experiments)
+        .map(|_| {
+            let gs = GraphState::new(&edges, &biases);
+            let mut qmc_graph = new_transverse_qmc(gs, transverse, cutoff, offset);
+            let (measure, _, steps_measured) = qmc_graph.timesteps_measure(
+                timesteps as u64,
+                beta,
+                0.0,
+                |acc, state, _| {
+                    state
+                        .iter()
+                        .fold(0.0, |acc, b| if *b { acc + up_m } else { acc + down_m })
+                        + acc
+                },
+                None,
+            );
+            measure / steps_measured as f64
+        })
+        .collect()
 }
 
 #[pymodule]
@@ -398,6 +458,10 @@ fn monte_carlo(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     ))?;
     m.add_wrapped(pyo3::wrap_pyfunction!(
         run_quantum_monte_carlo_and_measure_edges_and_variance
+    ))?;
+    m.add_wrapped(pyo3::wrap_pyfunction!(run_transverse_quantum_monte_carlo))?;
+    m.add_wrapped(pyo3::wrap_pyfunction!(
+        run_transverse_quantum_monte_carlo_and_measure_spins
     ))?;
     Ok(())
 }

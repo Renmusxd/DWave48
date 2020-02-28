@@ -28,7 +28,11 @@ impl<R: Rng> QMCGraph<R> {
         energy_offset: f64,
         rng: Rg,
     ) -> QMCGraph<Rg> {
-        let edges = graph.edges.into_iter().map(|((a,b), j)| (vec![a, b], j)).collect::<Vec<_>>();
+        let edges = graph
+            .edges
+            .into_iter()
+            .map(|((a, b), j)| (vec![a, b], j))
+            .collect::<Vec<_>>();
         let biases = graph.biases;
         let state = graph.state;
         let mut ops = SimpleOpDiagonal::new(state.as_ref().map_or(0, |s| s.len()));
@@ -54,7 +58,7 @@ impl<R: Rng> QMCGraph<R> {
         beta: f64,
         init_t: T,
         state_fold: F,
-        sampling_freq: Option<u64>
+        sampling_freq: Option<u64>,
     ) -> (T, f64, usize)
     where
         F: Fn(T, &[bool], f64) -> T,
@@ -63,10 +67,7 @@ impl<R: Rng> QMCGraph<R> {
         let edges = &self.edges;
         let biases = &self.biases;
         let energy_offset = self.energy_offset;
-        let h = |vars: &[usize],
-                 bond: usize,
-                 input_state: &[bool],
-                 output_state: &[bool]| {
+        let h = |vars: &[usize], bond: usize, input_state: &[bool], output_state: &[bool]| {
             hamiltonian(
                 (vars[0], vars[1]),
                 (input_state[0], input_state[1]),
@@ -83,6 +84,7 @@ impl<R: Rng> QMCGraph<R> {
         let sampling_freq = sampling_freq.unwrap_or(1);
         for t in 0..timesteps {
             // Start by editing the ops list
+            let rng = &mut self.rng;
             let mut manager = self.op_manager.take().unwrap();
             manager.make_diagonal_update_with_rng(
                 self.cutoff,
@@ -90,17 +92,22 @@ impl<R: Rng> QMCGraph<R> {
                 &state,
                 h,
                 (edges.len(), |i| &edges[i].0),
-                &mut self.rng,
+                rng,
             );
-            self.cutoff = max(self.cutoff, manager.get_n() + manager.get_n()/2);
+            self.cutoff = max(self.cutoff, manager.get_n() + manager.get_n() / 2);
 
             let mut manager = manager.convert_to_looper();
             // Now we can do loop updates easily.
-            let state_updates = manager.make_loop_update_with_rng(None, h, &mut self.rng);
+            let state_updates = manager.make_loop_update_with_rng(None, h, rng);
             state_updates.into_iter().for_each(|(i, v)| {
                 state[i] = v;
             });
-            let rng = &mut self.rng;
+
+            let state_updates = manager.flip_each_cluster_rng(0.5, rng);
+            state_updates.into_iter().for_each(|(i, v)| {
+                state[i] = v;
+            });
+
             let manager = manager;
             state.iter_mut().enumerate().for_each(|(var, state)| {
                 if !manager.does_var_have_ops(var) && rng.gen_bool(0.5) {
@@ -109,7 +116,7 @@ impl<R: Rng> QMCGraph<R> {
             });
 
             // Ignore first one.
-            if (t+1) % sampling_freq == 0 {
+            if (t + 1) % sampling_freq == 0 {
                 let weight = manager.weight(h);
                 acc = state_fold(acc, &state, weight);
                 total_weight += weight;
@@ -152,29 +159,6 @@ impl<R: Rng> QMCGraph<R> {
     //    };
     //    self.op_manager.debug_print(h)
     // }
-    //
-    //    pub fn mat_element(&self) -> f64 {
-    //        let edges = &self.edges;
-    //        let biases = &self.biases;
-    //        let offset = self.energy_offset;
-    //        let h = |vara: usize,
-    //                 varb: usize,
-    //                 bond: usize,
-    //                 input_state: (bool, bool),
-    //                 output_state: (bool, bool)| {
-    //            hamiltonian(
-    //                vara,
-    //                varb,
-    //                bond,
-    //                input_state,
-    //                output_state,
-    //                edges,
-    //                biases,
-    //                offset,
-    //            )
-    //        };
-    //        self.op_manager.total_matrix_weight(h)
-    //    }
 }
 
 fn hamiltonian(
@@ -187,44 +171,15 @@ fn hamiltonian(
 ) -> f64 {
     let (vara, varb) = vars;
     let matentry = if input_state == output_state {
-        offset + match input_state {
-            (false, false) => -binding,
-            (false, true) => binding + biases[varb],
-            (true, false) => binding + biases[vara],
-            (true, true) => -binding + biases[vara] + biases[varb],
-        }
+        offset
+            + match input_state {
+                (false, false) => -binding,
+                (false, true) => binding + biases[varb],
+                (true, false) => binding + biases[vara],
+                (true, true) => -binding + biases[vara] + biases[varb],
+            }
     } else {
         0.0
-    };
-    assert!(matentry >= 0.0);
-    matentry
-}
-
-
-fn tilted_hamiltonian(
-    vars: (usize, usize),
-    input_state: (bool, bool),
-    output_state: (bool, bool),
-    binding: f64,
-    transverse: &[f64],
-    offset: f64,
-) -> f64 {
-    let (vara, varb) = vars;
-    let matentry = if input_state == output_state {
-        offset + match input_state {
-            (false, false) => 0.0,
-            (false, true) => transverse[varb],
-            (true, false) => transverse[vara],
-            (true, true) => transverse[vara] + transverse[varb],
-        }
-    } else {
-        let diff = (input_state.0 == output_state.0, input_state.1 == output_state.1);
-        offset + match diff {
-            (false, false) => 0.0,
-            (false, true) => binding,
-            (true, false) => binding,
-            (true, true) => unreachable!(),
-        }
     };
     assert!(matentry >= 0.0);
     matentry

@@ -30,7 +30,7 @@ pub trait DiagonalUpdater: OpContainer {
         edges_fn: E,
     ) where
         H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
-        E: Fn(usize) -> &'b[usize],
+        E: Fn(usize) -> &'b [usize],
     {
         self.make_diagonal_update_with_rng(
             cutoff,
@@ -52,7 +52,7 @@ pub trait DiagonalUpdater: OpContainer {
         rng: &mut R,
     ) where
         H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
-        E: Fn(usize) -> &'b[usize],
+        E: Fn(usize) -> &'b [usize],
     {
         let mut state = state.to_vec();
         let (num_edges, edges_fn) = edges;
@@ -63,14 +63,10 @@ pub trait DiagonalUpdater: OpContainer {
             let b = match op {
                 None => rng.gen_range(0, num_edges),
                 Some(op) if op.is_diagonal() => op.bond,
-                Some(Op {
-                    vars,
-                    outputs,
-                    ..
-                }) => {
-                    vars.iter().zip(outputs.iter()).for_each(|(v, b)| {
-                       state[*v] = *b
-                    });
+                Some(Op { vars, outputs, .. }) => {
+                    vars.iter()
+                        .zip(outputs.iter())
+                        .for_each(|(v, b)| state[*v] = *b);
                     continue;
                 }
             };
@@ -265,10 +261,13 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
         let sel_opnode = self.get_node_mut(sel_op_pos).unwrap();
         let sel_op = sel_opnode.get_op();
 
-        let inputs_legs = (0 .. sel_op.vars.len()).map(|v| (v, OpSide::Inputs));
-        let outputs_legs = (0 .. sel_op.vars.len()).map(|v| (v, OpSide::Outputs));
+        let inputs_legs = (0..sel_op.vars.len()).map(|v| (v, OpSide::Inputs));
+        let outputs_legs = (0..sel_op.vars.len()).map(|v| (v, OpSide::Outputs));
         let legs = inputs_legs.chain(outputs_legs).collect::<Vec<_>>();
-        let weights = legs.iter().map(|leg| h(&sel_op, entrance_leg, *leg)).collect::<Vec<_>>();
+        let weights = legs
+            .iter()
+            .map(|leg| h(&sel_op, entrance_leg, *leg))
+            .collect::<Vec<_>>();
         let total_weight: f64 = weights.iter().sum();
         let choice = rng.gen_range(0.0, total_weight);
         let exit_leg = *weights
@@ -335,6 +334,225 @@ pub trait LoopUpdater<Node: OpNode>: OpContainer {
         }
     }
 }
+
+pub trait ClusterUpdater<Node: OpNode>: LoopUpdater<Node> {
+    fn flip_each_cluster_rng<R: Rng>(&mut self, prob: f64, rng: &mut R) -> Vec<(usize, bool)> {
+        if self.get_n() == 0 {
+            return vec![];
+        }
+
+        let last_p = self.get_last_p().unwrap();
+        let mut boundaries: Vec<(Option<usize>, Option<usize>)> = vec![(None, None); last_p+1];
+
+        let single_site_p = self.find_single_site();
+        let n_clusters = if let Some(single_site_p) = single_site_p {
+            // Expand to edges of cluster
+            let mut frontier: Vec<(usize, OpSide)> = vec![];
+            // (single_site_p, OpSide::Inputs)
+            let node = self.get_node_ref(single_site_p).unwrap();
+            self.rec_expand_whole_cluster(
+                single_site_p,
+                node,
+                (0, OpSide::Inputs),
+                0,
+                &mut boundaries,
+                &mut frontier,
+            );
+
+            let mut cluster_num = 1;
+            while let Some((p, frontier_side)) = frontier.pop() {
+                let node = self.get_node_ref(p).unwrap();
+                match boundaries[p] {
+                    (Some(_), Some(_)) => { /* This was hit by another cluster expansion. */ }
+                    (Some(_), None) if frontier_side == OpSide::Outputs => {
+                        self.rec_expand_whole_cluster(
+                            p,
+                            node,
+                            (0, frontier_side),
+                            cluster_num,
+                            &mut boundaries,
+                            &mut frontier,
+                        );
+                        cluster_num += 1;
+                    }
+                    (None, Some(_)) if frontier_side == OpSide::Inputs => {
+                        self.rec_expand_whole_cluster(
+                            p,
+                            node,
+                            (0, frontier_side),
+                            cluster_num,
+                            &mut boundaries,
+                            &mut frontier,
+                        );
+                        cluster_num += 1;
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            cluster_num
+        } else {
+            // The whole thing is one cluster.
+            boundaries.iter_mut().for_each(|v| {
+                v.0 = Some(0);
+                v.1 = Some(0);
+            });
+            1
+        };
+
+        let mut state_changes = vec![];
+        let boundaries = boundaries
+            .into_iter()
+            .enumerate()
+            .filter_map(|(p, clust)| match clust {
+                (Some(a), Some(b)) => Some((p, (a, b))),
+                (None, None) => None,
+                _ => unreachable!(),
+            })
+            .collect::<Vec<_>>();
+
+        // Now maybe flip each cluster.
+        (0..n_clusters).for_each(|cluster| {
+            if rng.gen_bool(prob) {
+                boundaries
+                    .iter()
+                    .cloned()
+                    .for_each(|(p, (input_cluster, output_cluster))| {
+                        if input_cluster == cluster {
+                            let node = self.get_node_mut(p).unwrap();
+                            let op = node.get_op_mut();
+                            flip_state_for_op(op, OpSide::Inputs);
+                            let node = self.get_node_ref(p).unwrap();
+                            let op = node.get_op_ref();
+                            (0..op.vars.len()).for_each(|relvar| {
+                                let prev_p = self.get_previous_p_for_rel_var(relvar, node);
+                                if prev_p.is_none() {
+                                    state_changes.push((op.vars[relvar], op.inputs[relvar]));
+                                }
+                            });
+                        }
+                        if output_cluster == cluster {
+                            let node = self.get_node_mut(p).unwrap();
+                            let op = node.get_op_mut();
+                            flip_state_for_op(op, OpSide::Outputs)
+                        }
+                    });
+            }
+        });
+        state_changes
+    }
+
+    // Expands outwards (not through ops) from p with sel.
+    fn rec_expand_whole_cluster(
+        &self,
+        p: usize,
+        node: &Node,
+        leg: Leg,
+        cluster_num: usize,
+        boundaries: &mut [(Option<usize>, Option<usize>)],
+        frontier: &mut Vec<(usize, OpSide)>,
+    ) {
+        // Returns true if both sides have clusters attached.
+        fn set_boundary(
+            p: usize,
+            sel: OpSide,
+            cluster_num: usize,
+            boundaries: &mut [(Option<usize>, Option<usize>)],
+        ) -> bool {
+            let t = &boundaries[p];
+            boundaries[p] = match sel {
+                OpSide::Inputs => (Some(cluster_num), t.1),
+                OpSide::Outputs => (t.0, Some(cluster_num)),
+            };
+            match boundaries[p] {
+                (Some(_), Some(_)) => true,
+                _ => false,
+            }
+        }
+        fn set_boundaries(
+            p: usize,
+            cluster_num: usize,
+            boundaries: &mut [(Option<usize>, Option<usize>)],
+        ) {
+            set_boundary(p, OpSide::Inputs, cluster_num, boundaries);
+            set_boundary(p, OpSide::Outputs, cluster_num, boundaries);
+        }
+        print!("{:?}\t{}, {:?}", boundaries, p, leg.1);
+        set_boundary(p, leg.1, cluster_num, boundaries);
+        println!("\t{:?}", boundaries);
+
+        let op = node.get_op_ref();
+        let relvar = leg.0;
+        let var = op.vars[relvar];
+        let ((next_p, next_node), next_leg) = match leg.1 {
+            OpSide::Inputs => {
+                let prev_p = self.get_previous_p_for_rel_var(relvar, node);
+                let prev_p = prev_p.unwrap_or_else(|| self.get_last_p_for_var(var).unwrap());
+                let prev_node = self.get_node_ref(prev_p).unwrap();
+                let new_rel_var = prev_node.get_op_ref().index_of_var(var).unwrap();
+                ((prev_p, prev_node), (new_rel_var, OpSide::Outputs))
+            }
+            OpSide::Outputs => {
+                let next_p = self.get_next_p_for_rel_var(relvar, node);
+                let next_p = next_p.unwrap_or_else(|| self.get_first_p_for_var(var).unwrap());
+                let next_node = self.get_node_ref(next_p).unwrap();
+                let new_rel_var = next_node.get_op_ref().index_of_var(var).unwrap();
+                ((next_p, next_node), (new_rel_var, OpSide::Inputs))
+            }
+        };
+
+        // If we hit a 1-site, add to frontier and mark in boundary.
+        if next_node.get_op_ref().vars.len() == 1 {
+            if !set_boundary(next_p, next_leg.1, cluster_num, boundaries) {
+                frontier.push((next_p, next_leg.1.reverse()))
+            }
+        } else if boundaries[next_p] == (None, None) {
+            set_boundaries(next_p, cluster_num, boundaries);
+
+            let next_op = next_node.get_op_ref();
+            let inputs_legs = (0..next_op.vars.len()).map(|v| (v, OpSide::Inputs));
+            let outputs_legs = (0..next_op.vars.len()).map(|v| (v, OpSide::Outputs));
+            let legs = inputs_legs.chain(outputs_legs);
+
+            legs.for_each(|check_leg| {
+                if check_leg != next_leg {
+                    self.rec_expand_whole_cluster(
+                        next_p,
+                        next_node,
+                        check_leg,
+                        cluster_num,
+                        boundaries,
+                        frontier,
+                    )
+                }
+            })
+        }
+    }
+
+    fn find_single_site(&self) -> Option<usize> {
+        let first_p = self.get_first_p();
+        self.find_single_site_rec(first_p)
+    }
+
+    fn find_single_site_rec(&self, node_p: Option<usize>) -> Option<usize> {
+        let node = node_p.and_then(|node_p| self.get_node_ref(node_p));
+        node.and_then(|node| {
+            if node.get_op_ref().vars.len() == 1 {
+                node_p
+            } else {
+                let next_p = self.get_next_p(node);
+                self.find_single_site_rec(next_p)
+            }
+        })
+    }
+}
+
+fn flip_state_for_op(op: &mut Op, side: OpSide) {
+    match side {
+        OpSide::Inputs => op.inputs.iter_mut().for_each(|b| *b = !*b),
+        OpSide::Outputs => op.outputs.iter_mut().for_each(|b| *b = !*b),
+    }
+}
+
 //fn debug_print_looper<L: LoopUpdater<Node>, Node: OpNode, H>(looper: L, h: H)
 //    where
 //        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,

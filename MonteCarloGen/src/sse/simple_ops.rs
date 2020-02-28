@@ -51,8 +51,11 @@ impl SimpleOpDiagonal {
                         this_opnode.previous_p = Some(last_p);
                     }
                 }
-                op.vars.iter().cloned().enumerate().for_each(|(indx, v)| {
-                    match var_ends[v] {
+                op.vars
+                    .iter()
+                    .cloned()
+                    .enumerate()
+                    .for_each(|(indx, v)| match var_ends[v] {
                         None => var_ends[v] = Some((p, p)),
                         Some((_, last_p)) => {
                             let last_op = opnodes[last_p].as_mut().unwrap();
@@ -62,8 +65,7 @@ impl SimpleOpDiagonal {
                             let this_opnode = opnodes[p].as_mut().unwrap();
                             this_opnode.previous_for_vars[indx] = Some(last_p);
                         }
-                    }
-                })
+                    })
             });
         SimpleOpLooper {
             ops: opnodes,
@@ -71,6 +73,47 @@ impl SimpleOpDiagonal {
             p_ends,
             var_ends,
         }
+    }
+
+    pub fn debug_print<H>(&self, h: H)
+    where
+        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
+    {
+        fn lines_for(a: usize, b: usize) {
+            (a..b).for_each(|_| {
+                print!("| ");
+            });
+        }
+
+        print!("    \t");
+        lines_for(0, self.nvars);
+        println!();
+        let empty: [usize; 0] = [];
+        self.ops.iter().enumerate().for_each(|(p, op)| {
+            let (vars, d): (&[usize], bool) = match op {
+                Some(op) => (&op.vars, op.is_diagonal()),
+                None => (&empty, false),
+            };
+            print!("{:>5}\t", p);
+            let last = vars.iter().fold(0, |acc, v| {
+                lines_for(acc, *v);
+                if d {
+                    print!("O ");
+                } else {
+                    print!("X ");
+                }
+                *v + 1
+            });
+            lines_for(last, self.nvars);
+            match op {
+                Some(op) => println!(
+                    "\t{:?}\t{}",
+                    op,
+                    h(&op.vars, op.bond, &op.inputs, &op.outputs)
+                ),
+                None => println!(),
+            };
+        })
     }
 }
 
@@ -190,12 +233,7 @@ impl OpContainer for SimpleOpLooper {
         let mut p = self.p_ends.map(|(p, _)| p);
         while p.is_some() {
             let op = self.ops[p.unwrap()].as_ref().unwrap();
-            t *= h(
-                &op.op.vars,
-                op.op.bond,
-                &op.op.inputs,
-                &op.op.outputs,
-            );
+            t *= h(&op.op.vars, op.op.bond, &op.op.inputs, &op.op.outputs);
             p = op.next_p;
         }
         t
@@ -247,3 +285,5 @@ impl LoopUpdater<SimpleOpNode> for SimpleOpLooper {
         self.nth_ps[n]
     }
 }
+
+impl ClusterUpdater<SimpleOpNode> for SimpleOpLooper {}
