@@ -103,11 +103,6 @@ impl<R: Rng> QMCGraph<R> {
                 state[i] = v;
             });
 
-            let state_updates = manager.flip_each_cluster_rng(0.5, rng);
-            state_updates.into_iter().for_each(|(i, v)| {
-                state[i] = v;
-            });
-
             let manager = manager;
             state.iter_mut().enumerate().for_each(|(var, state)| {
                 if !manager.does_var_have_ops(var) && rng.gen_bool(0.5) {

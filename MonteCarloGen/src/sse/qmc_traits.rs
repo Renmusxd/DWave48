@@ -73,6 +73,8 @@ pub trait DiagonalUpdater: OpContainer {
             let vars = edges_fn(b);
             let substate = vars.iter().map(|v| state[*v]).collect::<Vec<_>>();
             let mat_element = hamiltonian(vars, b, &substate, &substate);
+
+            // This is based on equations 19a and 19b of arXiv:1909.10591v1 from 23 Sep 2019
             let numerator = beta * num_edges as f64 * mat_element;
             let denominator = (cutoff - self.get_n()) as f64;
 
@@ -342,7 +344,7 @@ pub trait ClusterUpdater<Node: OpNode>: LoopUpdater<Node> {
         }
 
         let last_p = self.get_last_p().unwrap();
-        let mut boundaries: Vec<(Option<usize>, Option<usize>)> = vec![(None, None); last_p+1];
+        let mut boundaries: Vec<(Option<usize>, Option<usize>)> = vec![(None, None); last_p + 1];
 
         let single_site_p = self.find_single_site();
         let n_clusters = if let Some(single_site_p) = single_site_p {
@@ -360,33 +362,65 @@ pub trait ClusterUpdater<Node: OpNode>: LoopUpdater<Node> {
             );
 
             let mut cluster_num = 1;
-            while let Some((p, frontier_side)) = frontier.pop() {
-                let node = self.get_node_ref(p).unwrap();
-                match boundaries[p] {
-                    (Some(_), Some(_)) => { /* This was hit by another cluster expansion. */ }
-                    (Some(_), None) if frontier_side == OpSide::Outputs => {
-                        self.rec_expand_whole_cluster(
-                            p,
-                            node,
-                            (0, frontier_side),
-                            cluster_num,
-                            &mut boundaries,
-                            &mut frontier,
-                        );
-                        cluster_num += 1;
+            loop {
+                while let Some((p, frontier_side)) = frontier.pop() {
+                    let node = self.get_node_ref(p).unwrap();
+                    match boundaries[p] {
+                        (Some(_), Some(_)) => { /* This was hit by another cluster expansion. */ }
+                        (Some(_), None) if frontier_side == OpSide::Outputs => {
+                            self.rec_expand_whole_cluster(
+                                p,
+                                node,
+                                (0, frontier_side),
+                                cluster_num,
+                                &mut boundaries,
+                                &mut frontier,
+                            );
+                            cluster_num += 1;
+                        }
+                        (None, Some(_)) if frontier_side == OpSide::Inputs => {
+                            self.rec_expand_whole_cluster(
+                                p,
+                                node,
+                                (0, frontier_side),
+                                cluster_num,
+                                &mut boundaries,
+                                &mut frontier,
+                            );
+                            cluster_num += 1;
+                        }
+                        _ => unreachable!(),
                     }
-                    (None, Some(_)) if frontier_side == OpSide::Inputs => {
-                        self.rec_expand_whole_cluster(
-                            p,
-                            node,
-                            (0, frontier_side),
-                            cluster_num,
-                            &mut boundaries,
-                            &mut frontier,
-                        );
-                        cluster_num += 1;
-                    }
-                    _ => unreachable!(),
+                }
+                // Check if any site ops are not yet set to a cluster.
+                let unmapped_p = boundaries.iter().enumerate().find_map(|(p, (a, b))| {
+                    self.get_node_ref(p).and_then(|node| match (a, b) {
+                        (None, None) => Some(p),
+                        (Some(_), None) | (None, Some(_)) => unreachable!(),
+                        _ => None,
+                    })
+                });
+                if let Some(p) = unmapped_p {
+                    let node = self.get_node_ref(p).unwrap();
+                    self.rec_arrive_at_op(
+                        p,
+                        node,
+                        (0, OpSide::Inputs),
+                        cluster_num,
+                        &mut boundaries,
+                        &mut frontier,
+                    );
+                    self.rec_expand_whole_cluster(
+                        p,
+                        node,
+                        (0, OpSide::Inputs),
+                        cluster_num,
+                        &mut boundaries,
+                        &mut frontier,
+                    );
+                    cluster_num += 1;
+                } else {
+                    break;
                 }
             }
             cluster_num
@@ -451,34 +485,7 @@ pub trait ClusterUpdater<Node: OpNode>: LoopUpdater<Node> {
         boundaries: &mut [(Option<usize>, Option<usize>)],
         frontier: &mut Vec<(usize, OpSide)>,
     ) {
-        // Returns true if both sides have clusters attached.
-        fn set_boundary(
-            p: usize,
-            sel: OpSide,
-            cluster_num: usize,
-            boundaries: &mut [(Option<usize>, Option<usize>)],
-        ) -> bool {
-            let t = &boundaries[p];
-            boundaries[p] = match sel {
-                OpSide::Inputs => (Some(cluster_num), t.1),
-                OpSide::Outputs => (t.0, Some(cluster_num)),
-            };
-            match boundaries[p] {
-                (Some(_), Some(_)) => true,
-                _ => false,
-            }
-        }
-        fn set_boundaries(
-            p: usize,
-            cluster_num: usize,
-            boundaries: &mut [(Option<usize>, Option<usize>)],
-        ) {
-            set_boundary(p, OpSide::Inputs, cluster_num, boundaries);
-            set_boundary(p, OpSide::Outputs, cluster_num, boundaries);
-        }
-        print!("{:?}\t{}, {:?}", boundaries, p, leg.1);
         set_boundary(p, leg.1, cluster_num, boundaries);
-        println!("\t{:?}", boundaries);
 
         let op = node.get_op_ref();
         let relvar = leg.0;
@@ -500,6 +507,25 @@ pub trait ClusterUpdater<Node: OpNode>: LoopUpdater<Node> {
             }
         };
 
+        self.rec_arrive_at_op(
+            next_p,
+            next_node,
+            next_leg,
+            cluster_num,
+            boundaries,
+            frontier,
+        );
+    }
+
+    fn rec_arrive_at_op(
+        &self,
+        next_p: usize,
+        next_node: &Node,
+        next_leg: Leg,
+        cluster_num: usize,
+        boundaries: &mut [(Option<usize>, Option<usize>)],
+        frontier: &mut Vec<(usize, OpSide)>,
+    ) {
         // If we hit a 1-site, add to frontier and mark in boundary.
         if next_node.get_op_ref().vars.len() == 1 {
             if !set_boundary(next_p, next_leg.1, cluster_num, boundaries) {
@@ -544,6 +570,32 @@ pub trait ClusterUpdater<Node: OpNode>: LoopUpdater<Node> {
             }
         })
     }
+}
+
+// Returns true if both sides have clusters attached.
+fn set_boundary(
+    p: usize,
+    sel: OpSide,
+    cluster_num: usize,
+    boundaries: &mut [(Option<usize>, Option<usize>)],
+) -> bool {
+    let t = &boundaries[p];
+    boundaries[p] = match (sel, t) {
+        (OpSide::Inputs, (None, t1)) => (Some(cluster_num), *t1),
+        (OpSide::Outputs, (t0, None)) => (*t0, Some(cluster_num)),
+        // Now being careful
+        (OpSide::Inputs, (Some(c), t1)) if *c == cluster_num => (Some(cluster_num), *t1),
+        (OpSide::Outputs, (t0, Some(c))) if *c == cluster_num => (*t0, Some(cluster_num)),
+        _ => unreachable!(),
+    };
+    match boundaries[p] {
+        (Some(_), Some(_)) => true,
+        _ => false,
+    }
+}
+fn set_boundaries(p: usize, cluster_num: usize, boundaries: &mut [(Option<usize>, Option<usize>)]) {
+    set_boundary(p, OpSide::Inputs, cluster_num, boundaries);
+    set_boundary(p, OpSide::Outputs, cluster_num, boundaries);
 }
 
 fn flip_state_for_op(op: &mut Op, side: OpSide) {

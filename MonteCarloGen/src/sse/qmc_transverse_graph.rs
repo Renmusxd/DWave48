@@ -34,6 +34,8 @@ impl<R: Rng> QMCTransverseGraph<R> {
         energy_offset: f64,
         rng: Rg,
     ) -> QMCTransverseGraph<Rg> {
+        assert!(graph.biases.into_iter().all(|v| v == 0.0));
+
         let edges = graph
             .edges
             .into_iter()
@@ -69,44 +71,70 @@ impl<R: Rng> QMCTransverseGraph<R> {
         F: Fn(T, &[bool], f64) -> T,
     {
         let mut state = self.state.take().unwrap();
+        let nvars = state.len();
         let edges = &self.edges;
         let transverse = self.transverse;
         let energy_offset = self.energy_offset;
         let h = |vars: &[usize], bond: usize, input_state: &[bool], output_state: &[bool]| {
-            hamiltonian(
-                (vars[0], vars[1]),
-                (input_state[0], input_state[1]),
-                (output_state[0], output_state[1]),
-                edges[bond].1,
-                transverse,
-                energy_offset,
-            )
+            if vars.len() == 2 {
+                two_site_hamiltonian(
+                    (input_state[0], input_state[1]),
+                    (output_state[0], output_state[1]),
+                    edges[bond].1,
+                    transverse,
+                    energy_offset,
+                )
+            } else if vars.len() == 1 {
+                single_site_hamiltonian(
+                    input_state[0],
+                    output_state[0],
+                    transverse,
+                    energy_offset,
+                )
+            } else {
+                unreachable!()
+            }
         };
 
         let mut acc = init_t;
         let mut total_weight = 0.0;
         let mut steps_measured = 0;
         let sampling_freq = sampling_freq.unwrap_or(1);
+        let vars = (0..nvars).collect::<Vec<_>>();
         for t in 0..timesteps {
             // Start by editing the ops list
             let mut manager = self.op_manager.take().unwrap();
+            let rng = &mut self.rng;
+
             manager.make_diagonal_update_with_rng(
                 self.cutoff,
                 beta,
                 &state,
                 h,
-                (edges.len(), |i| &edges[i].0),
-                &mut self.rng,
+                (edges.len() + nvars, |i| {
+                    if i < edges.len() {
+                        &edges[i].0
+                    } else {
+                        let i = i - edges.len();
+                        &vars[i..i + 1]
+                    }
+                }),
+                rng,
             );
             self.cutoff = max(self.cutoff, manager.get_n() + manager.get_n() / 2);
 
             let mut manager = manager.convert_to_looper();
             // Now we can do loop updates easily.
-            let state_updates = manager.make_loop_update_with_rng(None, h, &mut self.rng);
+            let state_updates = manager.make_loop_update_with_rng(None, h, rng);
             state_updates.into_iter().for_each(|(i, v)| {
                 state[i] = v;
             });
-            let rng = &mut self.rng;
+
+            let state_updates = manager.flip_each_cluster_rng(0.5, rng);
+            state_updates.into_iter().for_each(|(i, v)| {
+                state[i] = v;
+            });
+
             let manager = manager;
             state.iter_mut().enumerate().for_each(|(var, state)| {
                 if !manager.does_var_have_ops(var) && rng.gen_bool(0.5) {
@@ -137,51 +165,68 @@ impl<R: Rng> QMCTransverseGraph<R> {
     }
 
     pub fn debug_print(&self) {
-        let offset = self.energy_offset;
+        let energy_offset = self.energy_offset;
         let transverse = self.transverse;
         let edges = &self.edges;
         let h = |vars: &[usize], bond: usize, input_state: &[bool], output_state: &[bool]| {
-            hamiltonian(
-                (vars[0], vars[1]),
-                (input_state[0], input_state[1]),
-                (output_state[0], output_state[1]),
-                edges[bond].1,
-                transverse,
-                offset,
-            )
+            if vars.len() == 2 {
+                two_site_hamiltonian(
+                    (input_state[0], input_state[1]),
+                    (output_state[0], output_state[1]),
+                    edges[bond].1,
+                    transverse,
+                    energy_offset,
+                )
+            } else if vars.len() == 1 {
+                single_site_hamiltonian(
+                    input_state[0],
+                    output_state[0],
+                    transverse,
+                    energy_offset,
+                )
+            } else {
+                unreachable!()
+            }
         };
         self.op_manager.as_ref().map(|opm| opm.debug_print(h));
     }
 }
 
-fn hamiltonian(
-    _vars: (usize, usize),
-    input_state: (bool, bool),
-    output_state: (bool, bool),
-    binding: f64,
+fn two_site_hamiltonian(
+    inputs: (bool, bool),
+    outputs: (bool, bool),
+    bond: f64,
     transverse: f64,
-    offset: f64,
+    energy_offset: f64,
 ) -> f64 {
-    let matentry = if input_state == output_state {
-        offset
-            + match input_state {
-                (false, false) => -2.0 * transverse,
-                (false, true) => 0.0,
-                (true, false) => 0.0,
-                (true, true) => 2.0 * transverse,
+    let matentry = if inputs == outputs {
+        energy_offset
+            + match inputs {
+                (false, false) => -bond,
+                (false, true) => bond,
+                (true, false) => bond,
+                (true, true) => -bond,
             }
     } else {
-        let diff = (
-            input_state.0 == output_state.0,
-            input_state.1 == output_state.1,
-        );
-        match diff {
-            (false, false) => binding,
-            (false, true) => 0.0,
-            (true, false) => 0.0,
-            (true, true) => unreachable!(),
+        let diff_state = (inputs.0 == outputs.0, inputs.1 == outputs.1);
+        match diff_state {
+            (false, false) => 0.0,
+            (true, false) | (false, true) => transverse,
+            (true, true) => unreachable!()
         }
     };
     assert!(matentry >= 0.0);
     matentry
+}
+
+fn single_site_hamiltonian(
+    input_state: bool,
+    output_state: bool,
+    transverse: f64,
+    energy_offset: f64,
+) -> f64 {
+    match (input_state, output_state) {
+        (false, false) | (true, true) => energy_offset,
+        (false, true) | (true, false) => transverse,
+    }
 }
