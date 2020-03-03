@@ -59,7 +59,7 @@ impl<R: Rng> QMCGraph<R> {
         init_t: T,
         state_fold: F,
         sampling_freq: Option<u64>,
-    ) -> (T, f64, usize)
+    ) -> (T, f64)
     where
         F: Fn(T, &[bool], f64) -> T,
     {
@@ -79,8 +79,8 @@ impl<R: Rng> QMCGraph<R> {
         };
 
         let mut acc = init_t;
-        let mut total_weight = 0.0;
         let mut steps_measured = 0;
+        let mut total_n = 0;
         let sampling_freq = sampling_freq.unwrap_or(1);
         for t in 0..timesteps {
             // Start by editing the ops list
@@ -114,14 +114,15 @@ impl<R: Rng> QMCGraph<R> {
             if (t + 1) % sampling_freq == 0 {
                 let weight = manager.weight(h);
                 acc = state_fold(acc, &state, weight);
-                total_weight += weight;
                 steps_measured += 1;
+                total_n += manager.get_n();
             }
 
             self.op_manager = Some(manager.convert_to_diagonal());
         }
+        let average_energy = -(total_n as f64 / (steps_measured as f64 * beta));
         self.state = Some(state);
-        (acc, total_weight, steps_measured)
+        (acc, average_energy)
     }
 
     pub fn clone_state(&self) -> Vec<bool> {

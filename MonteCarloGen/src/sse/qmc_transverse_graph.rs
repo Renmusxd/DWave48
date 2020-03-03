@@ -13,6 +13,7 @@ pub struct QMCTransverseGraph<R: Rng> {
     cutoff: usize,
     op_manager: Option<SimpleOpDiagonal>,
     energy_offset: f64,
+    use_loop_update: bool,
     rng: R,
 }
 
@@ -21,9 +22,10 @@ pub fn new_transverse_qmc(
     transverse: f64,
     cutoff: usize,
     energy_offset: f64,
+    use_loop_update: bool
 ) -> QMCTransverseGraph<ThreadRng> {
     let rng = rand::thread_rng();
-    QMCTransverseGraph::<ThreadRng>::new_with_rng(graph, transverse, cutoff, energy_offset, rng)
+    QMCTransverseGraph::<ThreadRng>::new_with_rng(graph, transverse, cutoff, energy_offset, use_loop_update, rng)
 }
 
 impl<R: Rng> QMCTransverseGraph<R> {
@@ -32,6 +34,7 @@ impl<R: Rng> QMCTransverseGraph<R> {
         transverse: f64,
         cutoff: usize,
         energy_offset: f64,
+        use_loop_update: bool,
         rng: Rg,
     ) -> QMCTransverseGraph<Rg> {
         assert!(graph.biases.into_iter().all(|v| v == 0.0));
@@ -51,12 +54,14 @@ impl<R: Rng> QMCTransverseGraph<R> {
             op_manager: Some(ops),
             cutoff,
             energy_offset,
+            use_loop_update,
             rng,
         }
     }
 
-    pub fn timesteps(&mut self, t: u64, beta: f64) {
-        self.timesteps_measure(t, beta, (), |_acc, _state, _weight| (), None);
+    pub fn timesteps(&mut self, t: u64, beta: f64) -> f64 {
+        let (_, average_energy) = self.timesteps_measure(t, beta, (), |_acc, _state, _weight| (), None);
+        average_energy
     }
 
     pub fn timesteps_measure<F, T>(
@@ -66,7 +71,7 @@ impl<R: Rng> QMCTransverseGraph<R> {
         init_t: T,
         state_fold: F,
         sampling_freq: Option<u64>,
-    ) -> (T, f64, usize)
+    ) -> (T, f64)
     where
         F: Fn(T, &[bool], f64) -> T,
     {
@@ -97,8 +102,8 @@ impl<R: Rng> QMCTransverseGraph<R> {
         };
 
         let mut acc = init_t;
-        let mut total_weight = 0.0;
         let mut steps_measured = 0;
+        let mut total_n = 0;
         let sampling_freq = sampling_freq.unwrap_or(1);
         let vars = (0..nvars).collect::<Vec<_>>();
         for t in 0..timesteps {
@@ -125,10 +130,12 @@ impl<R: Rng> QMCTransverseGraph<R> {
 
             let mut manager = manager.convert_to_looper();
             // Now we can do loop updates easily.
-            let state_updates = manager.make_loop_update_with_rng(None, h, rng);
-            state_updates.into_iter().for_each(|(i, v)| {
-                state[i] = v;
-            });
+            if self.use_loop_update {
+                let state_updates = manager.make_loop_update_with_rng(None, h, rng);
+                state_updates.into_iter().for_each(|(i, v)| {
+                    state[i] = v;
+                });
+            }
 
             let state_updates = manager.flip_each_cluster_rng(0.5, rng);
             state_updates.into_iter().for_each(|(i, v)| {
@@ -146,14 +153,15 @@ impl<R: Rng> QMCTransverseGraph<R> {
             if (t + 1) % sampling_freq == 0 {
                 let weight = manager.weight(h);
                 acc = state_fold(acc, &state, weight);
-                total_weight += weight;
                 steps_measured += 1;
+                total_n += manager.get_n();
             }
 
             self.op_manager = Some(manager.convert_to_diagonal());
         }
         self.state = Some(state);
-        (acc, total_weight, steps_measured)
+        let average_energy = -(total_n as f64 / (steps_measured as f64 * beta));
+        (acc, average_energy)
     }
 
     pub fn clone_state(&self) -> Vec<bool> {

@@ -33,7 +33,7 @@ fn run_quantum_monte_carlo_and_measure_spins(
     biases: Vec<f64>,
     spin_measurement: Option<(f64, f64)>,
     energy_offset: Option<f64>,
-) -> Vec<f64> {
+) -> Vec<(f64, f64)> {
     let offset = energy_offset.unwrap_or_else(|| get_offset(&edges, &biases));
     let cutoff = biases.len();
     let (down_m, up_m) = spin_measurement.unwrap_or((-1.0, 1.0));
@@ -41,19 +41,20 @@ fn run_quantum_monte_carlo_and_measure_spins(
         .map(|_| {
             let gs = GraphState::new(&edges, &biases);
             let mut qmc_graph = new_qmc(gs, cutoff, offset);
-            let (measure, weight, steps_measured) = qmc_graph.timesteps_measure(
+            let ((measure, steps_measured), energy) = qmc_graph.timesteps_measure(
                 timesteps as u64,
                 beta,
-                0.0,
-                |acc, state, weight| {
-                    state
+                (0.0, 0u64),
+                |(acc, step), state, weight| {
+                    let acc = state
                         .iter()
                         .fold(0.0, |acc, b| if *b { acc + up_m } else { acc + down_m })
-                        + acc
+                        + acc;
+                    (acc, step + 1)
                 },
                 None,
             );
-            measure / steps_measured as f64
+            (measure / steps_measured as f64, energy)
         })
         .collect()
 }
@@ -66,17 +67,18 @@ fn run_transverse_quantum_monte_carlo(
     nvars: usize,
     transverse: f64,
     energy_offset: Option<f64>,
-) -> Vec<Vec<bool>> {
+) -> Vec<(Vec<bool>, f64)> {
     let biases = vec![0.0; nvars];
     let offset = energy_offset.unwrap_or_else(|| get_offset(&edges, &biases));
+
     (0..num_experiments)
         .map(|_| {
             let gs = GraphState::new(&edges, &biases);
             let cutoff = biases.len() * max(beta.round() as usize, 1);
-            let mut qmc_graph = new_transverse_qmc(gs, transverse, cutoff, offset);
-            qmc_graph.timesteps(timesteps as u64, beta);
+            let mut qmc_graph = new_transverse_qmc(gs, transverse, cutoff, offset, false);
+            let e = qmc_graph.timesteps(timesteps as u64, beta);
             qmc_graph.debug_print();
-            qmc_graph.into_vec()
+            (qmc_graph.into_vec(), e)
         })
         .collect()
 }
@@ -98,8 +100,8 @@ fn run_transverse_quantum_monte_carlo_and_measure_spins(
     (0..num_experiments)
         .map(|_| {
             let gs = GraphState::new(&edges, &biases);
-            let mut qmc_graph = new_transverse_qmc(gs, transverse, cutoff, offset);
-            let (measure, _, steps_measured) = qmc_graph.timesteps_measure(
+            let mut qmc_graph = new_transverse_qmc(gs, transverse, cutoff, offset, false);
+            let (measure, steps_measured) = qmc_graph.timesteps_measure(
                 timesteps as u64,
                 beta,
                 0.0,
