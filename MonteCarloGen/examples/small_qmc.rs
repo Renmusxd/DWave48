@@ -11,7 +11,6 @@ fn run_quantum_monte_carlo(
     num_experiments: u64,
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
-    transverse_field: Option<Vec<f64>>,
     energy_offset: Option<f64>,
 ) -> Vec<Vec<bool>> {
     let offset = energy_offset.unwrap_or_else(|| get_offset(&edges, &biases));
@@ -32,7 +31,6 @@ fn run_quantum_monte_carlo_and_measure_spins(
     num_experiments: u64,
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
-    transverse_field: Option<Vec<f64>>,
     spin_measurement: Option<(f64, f64)>,
     energy_offset: Option<f64>,
 ) -> Vec<f64> {

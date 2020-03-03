@@ -394,7 +394,7 @@ pub trait ClusterUpdater<Node: OpNode>: LoopUpdater<Node> {
                 }
                 // Check if any site ops are not yet set to a cluster.
                 let unmapped_p = boundaries.iter().enumerate().find_map(|(p, (a, b))| {
-                    self.get_node_ref(p).and_then(|node| match (a, b) {
+                    self.get_node_ref(p).and_then(|_node| match (a, b) {
                         (None, None) => Some(p),
                         (Some(_), None) | (None, Some(_)) => unreachable!(),
                         _ => None,
@@ -426,9 +426,11 @@ pub trait ClusterUpdater<Node: OpNode>: LoopUpdater<Node> {
             cluster_num
         } else {
             // The whole thing is one cluster.
-            boundaries.iter_mut().for_each(|v| {
-                v.0 = Some(0);
-                v.1 = Some(0);
+            boundaries.iter_mut().enumerate().for_each(|(p, v)| {
+                if self.get_node_ref(p).is_some() {
+                    v.0 = Some(0);
+                    v.1 = Some(0);
+                }
             });
             1
         };

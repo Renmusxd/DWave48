@@ -188,7 +188,9 @@ impl<R: Rng> QMCTransverseGraph<R> {
                 unreachable!()
             }
         };
-        self.op_manager.as_ref().map(|opm| opm.debug_print(h));
+        if let Some(opm) = self.op_manager.as_ref() {
+            opm.debug_print(h)
+        }
     }
 }
 

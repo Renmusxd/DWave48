@@ -393,6 +393,7 @@ fn run_transverse_quantum_monte_carlo(
     let biases = vec![0.0; nvars];
     let offset = energy_offset.unwrap_or_else(|| get_offset(&edges, &biases));
     (0..num_experiments)
+        .into_par_iter()
         .map(|_| {
             let gs = GraphState::new(&edges, &biases);
             let cutoff = biases.len() * max(beta.round() as usize, 1);
@@ -419,6 +420,7 @@ fn run_transverse_quantum_monte_carlo_and_measure_spins(
     let cutoff = biases.len();
     let (down_m, up_m) = spin_measurement.unwrap_or((-1.0, 1.0));
     (0..num_experiments)
+        .into_par_iter()
         .map(|_| {
             let gs = GraphState::new(&edges, &biases);
             let mut qmc_graph = new_transverse_qmc(gs, transverse, cutoff, offset);
