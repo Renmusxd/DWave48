@@ -2,7 +2,7 @@ use crate::sse::qmc_traits::*;
 use crate::sse::qmc_types::Op;
 use crate::sse::arena::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SimpleOpDiagonal {
     ops: Vec<Option<Op>>,
     n: usize,

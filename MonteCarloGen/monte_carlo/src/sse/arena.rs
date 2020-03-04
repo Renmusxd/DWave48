@@ -1,14 +1,14 @@
 use std::fmt::Debug;
 use std::ops::{Index, IndexMut};
 
-#[derive(Clone, Debug)]
-pub struct Arena<T: Clone+Debug> {
+#[derive(Clone)]
+pub struct Arena<T: Clone> {
     arena: Vec<T>,
     default: T,
     index: usize
 }
 
-impl<T: Clone+Debug> Arena<T> {
+impl<T: Clone> Arena<T> {
     pub fn new(default: T) -> Self {
         Self {
             arena: vec![],

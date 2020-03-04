@@ -1,6 +1,6 @@
 extern crate monte_carlo;
-use monte_carlo::sse::qmc_transverse_graph::new_transverse_qmc;
 use monte_carlo::graph::*;
+use monte_carlo::sse::qmc_transverse_graph::new_transverse_qmc;
 use pyo3::prelude::*;
 use rayon::prelude::*;
 
