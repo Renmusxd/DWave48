@@ -12,7 +12,8 @@ pub struct QMCTransverseGraph<R: Rng> {
     state: Option<Vec<bool>>,
     cutoff: usize,
     op_manager: Option<SimpleOpDiagonal>,
-    energy_offset: f64,
+    twosite_energy_offset: f64,
+    singlesite_energy_offset: f64,
     use_loop_update: bool,
     rng: R,
 }
@@ -21,18 +22,10 @@ pub fn new_transverse_qmc(
     graph: GraphState,
     transverse: f64,
     cutoff: usize,
-    energy_offset: f64,
     use_loop_update: bool,
 ) -> QMCTransverseGraph<ThreadRng> {
     let rng = rand::thread_rng();
-    QMCTransverseGraph::<ThreadRng>::new_with_rng(
-        graph,
-        transverse,
-        cutoff,
-        energy_offset,
-        use_loop_update,
-        rng,
-    )
+    QMCTransverseGraph::<ThreadRng>::new_with_rng(graph, transverse, cutoff, use_loop_update, rng)
 }
 
 impl<R: Rng> QMCTransverseGraph<R> {
@@ -40,7 +33,6 @@ impl<R: Rng> QMCTransverseGraph<R> {
         graph: GraphState,
         transverse: f64,
         cutoff: usize,
-        energy_offset: f64,
         use_loop_update: bool,
         rng: Rg,
     ) -> QMCTransverseGraph<Rg> {
@@ -51,6 +43,15 @@ impl<R: Rng> QMCTransverseGraph<R> {
             .into_iter()
             .map(|((a, b), j)| (vec![a, b], j))
             .collect::<Vec<_>>();
+        let twosite_energy_offset = edges
+            .iter()
+            .fold(None, |acc, (_, j)| match acc {
+                None => Some(*j),
+                Some(acc) => Some(if *j < acc { *j } else { acc }),
+            })
+            .unwrap_or(0.0).abs();
+        let singlesite_energy_offset = transverse;
+
         let state = graph.state;
         let mut ops = SimpleOpDiagonal::new(state.as_ref().map_or(0, |s| s.len()));
         ops.set_min_size(cutoff);
@@ -60,7 +61,8 @@ impl<R: Rng> QMCTransverseGraph<R> {
             state,
             op_manager: Some(ops),
             cutoff,
-            energy_offset,
+            twosite_energy_offset,
+            singlesite_energy_offset,
             use_loop_update,
             rng,
         }
@@ -87,7 +89,8 @@ impl<R: Rng> QMCTransverseGraph<R> {
         let nvars = state.len();
         let edges = &self.edges;
         let transverse = self.transverse;
-        let energy_offset = self.energy_offset;
+        let twosite_energy_offset = self.twosite_energy_offset;
+        let singlesite_energy_offset = self.singlesite_energy_offset;
         let h = |vars: &[usize], bond: usize, input_state: &[bool], output_state: &[bool]| {
             if vars.len() == 2 {
                 two_site_hamiltonian(
@@ -95,10 +98,15 @@ impl<R: Rng> QMCTransverseGraph<R> {
                     (output_state[0], output_state[1]),
                     edges[bond].1,
                     transverse,
-                    energy_offset,
+                    twosite_energy_offset,
                 )
             } else if vars.len() == 1 {
-                single_site_hamiltonian(input_state[0], output_state[0], transverse, energy_offset)
+                single_site_hamiltonian(
+                    input_state[0],
+                    output_state[0],
+                    transverse,
+                    singlesite_energy_offset,
+                )
             } else {
                 unreachable!()
             }
@@ -164,7 +172,9 @@ impl<R: Rng> QMCTransverseGraph<R> {
         }
         self.state = Some(state);
         let average_energy = -(total_n as f64 / (steps_measured as f64 * beta));
-        (acc, average_energy)
+        // Get total energy offset (num_vars * singlesite + num_edges * twosite)
+        let offset = twosite_energy_offset* edges.len() as f64 + singlesite_energy_offset* nvars as f64;
+        (acc, average_energy + offset)
     }
 
     pub fn clone_state(&self) -> Vec<bool> {
@@ -176,7 +186,8 @@ impl<R: Rng> QMCTransverseGraph<R> {
     }
 
     pub fn debug_print(&self) {
-        let energy_offset = self.energy_offset;
+        let twosite_energy_offset = self.twosite_energy_offset;
+        let singlesite_energy_offset = self.singlesite_energy_offset;
         let transverse = self.transverse;
         let edges = &self.edges;
         let h = |vars: &[usize], bond: usize, input_state: &[bool], output_state: &[bool]| {
@@ -186,10 +197,15 @@ impl<R: Rng> QMCTransverseGraph<R> {
                     (output_state[0], output_state[1]),
                     edges[bond].1,
                     transverse,
-                    energy_offset,
+                    twosite_energy_offset,
                 )
             } else if vars.len() == 1 {
-                single_site_hamiltonian(input_state[0], output_state[0], transverse, energy_offset)
+                single_site_hamiltonian(
+                    input_state[0],
+                    output_state[0],
+                    transverse,
+                    singlesite_energy_offset,
+                )
             } else {
                 unreachable!()
             }
