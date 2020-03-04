@@ -182,7 +182,8 @@ where
         .map(|_| {
             let gs = GraphState::new(&edges, &biases);
             let mut qmc_graph = qmc_graph::new_qmc(gs, cutoff, offset);
-            qmc_graph.timesteps_measure(timesteps as u64, beta, init(), fold, sampling_freq)
+            let (t, e) = qmc_graph.timesteps_measure(timesteps as u64, beta, init(), fold, sampling_freq);
+            (t, e + offset)
         }).collect::<Vec<_>>()
 }
 
@@ -394,7 +395,7 @@ fn run_transverse_quantum_monte_carlo(
             let cutoff = biases.len() * max(beta.round() as usize, 1);
             let mut qmc_graph = new_transverse_qmc(gs, transverse, cutoff, offset, use_loop_update);
             let average_energy = qmc_graph.timesteps(timesteps as u64, beta);
-            (average_energy, qmc_graph.into_vec())
+            (average_energy + offset, qmc_graph.into_vec())
         })
         .collect()
 }
@@ -434,7 +435,7 @@ fn run_transverse_quantum_monte_carlo_and_measure_spins(
                 },
                 None,
             );
-            (measure / steps as f64, average_energy)
+            (measure / steps as f64, average_energy + offset)
         })
         .collect()
 }
