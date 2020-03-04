@@ -49,7 +49,8 @@ impl<R: Rng> QMCTransverseGraph<R> {
                 None => Some(*j),
                 Some(acc) => Some(if *j < acc { *j } else { acc }),
             })
-            .unwrap_or(0.0).abs();
+            .unwrap_or(0.0)
+            .abs();
         let singlesite_energy_offset = transverse;
 
         let state = graph.state;
@@ -173,7 +174,8 @@ impl<R: Rng> QMCTransverseGraph<R> {
         self.state = Some(state);
         let average_energy = -(total_n as f64 / (steps_measured as f64 * beta));
         // Get total energy offset (num_vars * singlesite + num_edges * twosite)
-        let offset = twosite_energy_offset* edges.len() as f64 + singlesite_energy_offset* nvars as f64;
+        let offset =
+            twosite_energy_offset * edges.len() as f64 + singlesite_energy_offset * nvars as f64;
         (acc, average_energy + offset)
     }
 

@@ -1,10 +1,13 @@
 use crate::sse::qmc_traits::*;
 use crate::sse::qmc_types::Op;
+use crate::sse::arena::*;
 
+#[derive(Clone, Debug)]
 pub struct SimpleOpDiagonal {
     ops: Vec<Option<Op>>,
     n: usize,
     nvars: usize,
+    arena: Arena<Option<usize>>
 }
 
 impl SimpleOpDiagonal {
@@ -13,6 +16,7 @@ impl SimpleOpDiagonal {
             ops: vec![],
             n: 0,
             nvars,
+            arena: Arena::new(None)
         }
     }
 
@@ -22,13 +26,19 @@ impl SimpleOpDiagonal {
         }
     }
 
-    pub fn convert_to_looper(self) -> SimpleOpLooper {
+    pub fn convert_to_looper<'a>(self) -> SimpleOpLooper {
         let mut p_ends = None;
         let mut var_ends = vec![None; self.nvars];
+        let mut arena = self.arena;
         let mut opnodes = self
             .ops
             .iter()
-            .map(|op| op.clone().map(SimpleOpNode::new_empty))
+            .map(|op| op.clone().map(|op| {
+                let previous_slice = arena.get_alloc(op.vars.len());
+                let next_slice = arena.get_alloc(op.vars.len());
+
+                SimpleOpNode::new(op, previous_slice, next_slice)
+            }))
             .collect::<Vec<_>>();
         let mut nth_ps = vec![];
         self.ops
@@ -60,10 +70,10 @@ impl SimpleOpDiagonal {
                         Some((_, last_p)) => {
                             let last_op = opnodes[last_p].as_mut().unwrap();
                             let last_relvar = last_op.op.index_of_var(v).unwrap();
-                            last_op.next_for_vars[last_relvar] = Some(p);
+                            arena[&last_op.next_for_vars][last_relvar] = Some(p);
                             var_ends[v].as_mut().unwrap().1 = p;
                             let this_opnode = opnodes[p].as_mut().unwrap();
-                            this_opnode.previous_for_vars[indx] = Some(last_p);
+                            arena[&this_opnode.previous_for_vars][indx] = Some(last_p);
                         }
                     })
             });
@@ -72,12 +82,13 @@ impl SimpleOpDiagonal {
             nth_ps,
             p_ends,
             var_ends,
+            arena
         }
     }
 
     pub fn debug_print<H>(&self, h: H)
-    where
-        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
+        where
+            H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
     {
         fn lines_for(a: usize, b: usize) {
             (a..b).for_each(|_| {
@@ -135,8 +146,8 @@ impl OpContainer for SimpleOpDiagonal {
     }
 
     fn weight<H>(&self, h: H) -> f64
-    where
-        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
+        where
+            H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
     {
         self.ops
             .iter()
@@ -161,19 +172,21 @@ pub struct SimpleOpNode {
     op: Op,
     previous_p: Option<usize>,
     next_p: Option<usize>,
-    previous_for_vars: Vec<Option<usize>>,
-    next_for_vars: Vec<Option<usize>>,
+    previous_for_vars: ArenaIndex,
+    next_for_vars: ArenaIndex,
 }
 
 impl SimpleOpNode {
-    fn new_empty(op: Op) -> Self {
+    fn new(op: Op, previous_for_vars: ArenaIndex, next_for_vars: ArenaIndex) -> Self {
         let nvars = op.vars.len();
+        assert_eq!(previous_for_vars.size(), nvars);
+        assert_eq!(next_for_vars.size(), nvars);
         Self {
             op,
             previous_p: None,
             next_p: None,
-            previous_for_vars: vec![None; nvars],
-            next_for_vars: vec![None; nvars],
+            previous_for_vars,
+            next_for_vars,
         }
     }
 }
@@ -197,6 +210,7 @@ pub struct SimpleOpLooper {
     nth_ps: Vec<usize>,
     p_ends: Option<(usize, usize)>,
     var_ends: Vec<Option<(usize, usize)>>,
+    arena: Arena<Option<usize>>
 }
 
 impl SimpleOpLooper {
@@ -208,7 +222,9 @@ impl SimpleOpLooper {
             .into_iter()
             .map(|opnode| opnode.map(|opnode| opnode.op))
             .collect();
-        SimpleOpDiagonal { ops, n, nvars }
+        let mut arena = self.arena;
+        arena.clear();
+        SimpleOpDiagonal { ops, n, nvars, arena }
     }
 }
 
@@ -226,8 +242,8 @@ impl OpContainer for SimpleOpLooper {
     }
 
     fn weight<H>(&self, h: H) -> f64
-    where
-        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
+        where
+            H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
     {
         let mut t = 1.0;
         let mut p = self.p_ends.map(|(p, _)| p);
@@ -274,11 +290,11 @@ impl LoopUpdater<SimpleOpNode> for SimpleOpLooper {
     }
 
     fn get_previous_p_for_rel_var(&self, revar: usize, node: &SimpleOpNode) -> Option<usize> {
-        node.previous_for_vars[revar]
+        self.arena[&node.previous_for_vars][revar]
     }
 
     fn get_next_p_for_rel_var(&self, revar: usize, node: &SimpleOpNode) -> Option<usize> {
-        node.next_for_vars[revar]
+        self.arena[&node.next_for_vars][revar]
     }
 
     fn get_nth_p(&self, n: usize) -> usize {
