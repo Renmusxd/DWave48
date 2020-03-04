@@ -22,10 +22,17 @@ pub fn new_transverse_qmc(
     transverse: f64,
     cutoff: usize,
     energy_offset: f64,
-    use_loop_update: bool
+    use_loop_update: bool,
 ) -> QMCTransverseGraph<ThreadRng> {
     let rng = rand::thread_rng();
-    QMCTransverseGraph::<ThreadRng>::new_with_rng(graph, transverse, cutoff, energy_offset, use_loop_update, rng)
+    QMCTransverseGraph::<ThreadRng>::new_with_rng(
+        graph,
+        transverse,
+        cutoff,
+        energy_offset,
+        use_loop_update,
+        rng,
+    )
 }
 
 impl<R: Rng> QMCTransverseGraph<R> {
@@ -60,7 +67,8 @@ impl<R: Rng> QMCTransverseGraph<R> {
     }
 
     pub fn timesteps(&mut self, t: u64, beta: f64) -> f64 {
-        let (_, average_energy) = self.timesteps_measure(t, beta, (), |_acc, _state, _weight| (), None);
+        let (_, average_energy) =
+            self.timesteps_measure(t, beta, (), |_acc, _state, _weight| (), None);
         average_energy
     }
 
@@ -90,12 +98,7 @@ impl<R: Rng> QMCTransverseGraph<R> {
                     energy_offset,
                 )
             } else if vars.len() == 1 {
-                single_site_hamiltonian(
-                    input_state[0],
-                    output_state[0],
-                    transverse,
-                    energy_offset,
-                )
+                single_site_hamiltonian(input_state[0], output_state[0], transverse, energy_offset)
             } else {
                 unreachable!()
             }
@@ -186,12 +189,7 @@ impl<R: Rng> QMCTransverseGraph<R> {
                     energy_offset,
                 )
             } else if vars.len() == 1 {
-                single_site_hamiltonian(
-                    input_state[0],
-                    output_state[0],
-                    transverse,
-                    energy_offset,
-                )
+                single_site_hamiltonian(input_state[0], output_state[0], transverse, energy_offset)
             } else {
                 unreachable!()
             }
@@ -222,7 +220,7 @@ fn two_site_hamiltonian(
         match diff_state {
             (false, false) => 0.0,
             (true, false) | (false, true) => transverse,
-            (true, true) => unreachable!()
+            (true, true) => unreachable!(),
         }
     };
     assert!(matentry >= 0.0);

@@ -182,9 +182,11 @@ where
         .map(|_| {
             let gs = GraphState::new(&edges, &biases);
             let mut qmc_graph = qmc_graph::new_qmc(gs, cutoff, offset);
-            let (t, e) = qmc_graph.timesteps_measure(timesteps as u64, beta, init(), fold, sampling_freq);
-            (t, e + offset)
-        }).collect::<Vec<_>>()
+            let (t, e) =
+                qmc_graph.timesteps_measure(timesteps as u64, beta, init(), fold, sampling_freq);
+            (t, e)
+        })
+        .collect::<Vec<_>>()
 }
 
 fn run_and_measure_helper<F>(
@@ -196,7 +198,7 @@ fn run_and_measure_helper<F>(
     energy_offset: Option<f64>,
     sampling_freq: Option<u64>,
     f: F,
-) -> impl Iterator<Item=(f64, f64)>
+) -> impl Iterator<Item = (f64, f64)>
 where
     F: Copy + Send + Sync + Fn(&[bool]) -> f64,
 {
@@ -209,8 +211,10 @@ where
         energy_offset,
         sampling_freq,
         || (0.0, 0u64),
-        |(acc, step), state, _w| (acc + f(state), step+1)
-    ).into_iter().map(|((m, s), e)| (m / s as f64, e))
+        |(acc, step), state, _w| (acc + f(state), step + 1),
+    )
+    .into_iter()
+    .map(|((m, s), e)| (m / s as f64, e))
 }
 
 fn run_and_measure_variance_helper<F>(
@@ -222,7 +226,7 @@ fn run_and_measure_variance_helper<F>(
     energy_offset: Option<f64>,
     sampling_freq: Option<u64>,
     f: F,
-) -> impl Iterator<Item=(f64, f64, f64)>
+) -> impl Iterator<Item = (f64, f64, f64)>
 where
     F: Copy + Send + Sync + Fn(&[bool]) -> f64,
 {
@@ -240,7 +244,9 @@ where
             acc.push(m);
             (acc, s + 1)
         },
-    ).into_iter().map(|((acc, length), energy)| {
+    )
+    .into_iter()
+    .map(|((acc, length), energy)| {
         let len = length as f64;
         let prod = acc.iter().map(|m| m).sum::<f64>();
         let mean = prod / len;
@@ -275,7 +281,8 @@ fn run_quantum_monte_carlo_and_measure_spins(
                 .iter()
                 .fold(0.0, |acc, b| if *b { acc + up_m } else { acc + down_m })
         },
-    ).collect::<Vec<_>>()
+    )
+    .collect::<Vec<_>>()
 }
 
 #[pyfunction]
@@ -303,7 +310,8 @@ fn run_quantum_monte_carlo_and_measure_spins_and_variance(
                 .iter()
                 .fold(0.0, |acc, b| if *b { acc + up_m } else { acc + down_m })
         },
-    ).collect::<Vec<_>>()
+    )
+    .collect::<Vec<_>>()
 }
 
 #[pyfunction]
@@ -337,7 +345,8 @@ fn run_quantum_monte_carlo_and_measure_edges(
                     }
             })
         },
-    ).collect::<Vec<_>>()
+    )
+    .collect::<Vec<_>>()
 }
 
 #[pyfunction]
@@ -371,7 +380,8 @@ fn run_quantum_monte_carlo_and_measure_edges_and_variance(
                     }
             })
         },
-    ).collect::<Vec<_>>()
+    )
+    .collect::<Vec<_>>()
 }
 
 #[pyfunction]
@@ -384,7 +394,7 @@ fn run_transverse_quantum_monte_carlo(
     transverse: f64,
     energy_offset: Option<f64>,
     use_loop_update: Option<bool>,
-) -> Vec<(f64, Vec<bool>)> {
+) -> Vec<(Vec<bool>, f64)> {
     let biases = vec![0.0; nvars];
     let offset = energy_offset.unwrap_or_else(|| get_offset(&edges, &biases));
     let use_loop_update = use_loop_update.unwrap_or(false);
@@ -395,7 +405,7 @@ fn run_transverse_quantum_monte_carlo(
             let cutoff = biases.len() * max(beta.round() as usize, 1);
             let mut qmc_graph = new_transverse_qmc(gs, transverse, cutoff, offset, use_loop_update);
             let average_energy = qmc_graph.timesteps(timesteps as u64, beta);
-            (average_energy + offset, qmc_graph.into_vec())
+            (qmc_graph.into_vec(), average_energy)
         })
         .collect()
 }
@@ -411,12 +421,14 @@ fn run_transverse_quantum_monte_carlo_and_measure_spins(
     spin_measurement: Option<(f64, f64)>,
     energy_offset: Option<f64>,
     use_loop_update: Option<bool>,
+    exponent: Option<i32>,
 ) -> Vec<(f64, f64)> {
     let biases = vec![0.0; nvars];
     let offset = energy_offset.unwrap_or_else(|| get_offset(&edges, &biases));
     let use_loop_update = use_loop_update.unwrap_or(false);
     let cutoff = biases.len();
     let (down_m, up_m) = spin_measurement.unwrap_or((-1.0, 1.0));
+    let exponent = exponent.unwrap_or(1);
     (0..num_experiments)
         .into_par_iter()
         .map(|_| {
@@ -430,12 +442,13 @@ fn run_transverse_quantum_monte_carlo_and_measure_spins(
                     let acc = state
                         .iter()
                         .fold(0.0, |acc, b| if *b { acc + up_m } else { acc + down_m })
+                        .powi(exponent)
                         + acc;
-                    (acc, step+1)
+                    (acc, step + 1)
                 },
                 None,
             );
-            (measure / steps as f64, average_energy + offset)
+            (measure / steps as f64, average_energy)
         })
         .collect()
 }
