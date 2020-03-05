@@ -199,8 +199,7 @@ impl Lattice {
                         .map(|_| {
                             let gs = GraphState::new(&self.edges, &self.biases);
                             let cutoff = self.nvars;
-                            let mut qmc_graph =
-                                new_qmc(gs, transverse, cutoff, use_loop_update);
+                            let mut qmc_graph = new_qmc(gs, transverse, cutoff, use_loop_update);
                             let average_energy = qmc_graph.timesteps(timesteps as u64, beta);
                             (qmc_graph.into_vec(), average_energy)
                         })
@@ -239,8 +238,7 @@ impl Lattice {
                         .into_par_iter()
                         .map(|_| {
                             let gs = GraphState::new(&self.edges, &self.biases);
-                            let mut qmc_graph =
-                                new_qmc(gs, transverse, cutoff, use_loop_update);
+                            let mut qmc_graph = new_qmc(gs, transverse, cutoff, use_loop_update);
                             let ((measure, steps), average_energy) = qmc_graph.timesteps_measure(
                                 timesteps as u64,
                                 beta,

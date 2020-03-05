@@ -5,7 +5,7 @@ use std::ops::{Index, IndexMut};
 pub struct Arena<T: Clone> {
     arena: Vec<T>,
     default: T,
-    index: usize
+    index: usize,
 }
 
 impl<T: Clone> Arena<T> {
@@ -13,7 +13,7 @@ impl<T: Clone> Arena<T> {
         Self {
             arena: vec![],
             default,
-            index: 0
+            index: 0,
         }
     }
 
@@ -24,33 +24,33 @@ impl<T: Clone> Arena<T> {
     pub fn get_alloc(&mut self, size: usize) -> ArenaIndex {
         let index = self.index;
         let def_ref = &self.default;
-        self.arena.resize_with(index+size, || def_ref.clone());
+        self.arena.resize_with(index + size, || def_ref.clone());
         let index = ArenaIndex {
             start: index,
-            stop: index + size
+            stop: index + size,
         };
         self.index += size;
         index
     }
 }
 
-impl<T: Clone+Debug> Index<&ArenaIndex> for Arena<T> {
+impl<T: Clone + Debug> Index<&ArenaIndex> for Arena<T> {
     type Output = [T];
 
     fn index(&self, index: &ArenaIndex) -> &Self::Output {
-        &self.arena[index.start .. index.stop]
+        &self.arena[index.start..index.stop]
     }
 }
 
-impl<T: Clone+Debug> IndexMut<&ArenaIndex> for Arena<T> {
+impl<T: Clone + Debug> IndexMut<&ArenaIndex> for Arena<T> {
     fn index_mut(&mut self, index: &ArenaIndex) -> &mut Self::Output {
-        &mut self.arena[index.start .. index.stop]
+        &mut self.arena[index.start..index.stop]
     }
 }
 
 pub struct ArenaIndex {
     start: usize,
-    stop: usize
+    stop: usize,
 }
 
 impl ArenaIndex {

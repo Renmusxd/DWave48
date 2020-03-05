@@ -1,13 +1,13 @@
+use crate::sse::arena::*;
 use crate::sse::qmc_traits::*;
 use crate::sse::qmc_types::Op;
-use crate::sse::arena::*;
 
 #[derive(Clone)]
 pub struct SimpleOpDiagonal {
     ops: Vec<Option<Op>>,
     n: usize,
     nvars: usize,
-    arena: Arena<Option<usize>>
+    arena: Arena<Option<usize>>,
 }
 
 impl SimpleOpDiagonal {
@@ -16,7 +16,7 @@ impl SimpleOpDiagonal {
             ops: vec![],
             n: 0,
             nvars,
-            arena: Arena::new(None)
+            arena: Arena::new(None),
         }
     }
 
@@ -33,12 +33,14 @@ impl SimpleOpDiagonal {
         let mut opnodes = self
             .ops
             .iter()
-            .map(|op| op.clone().map(|op| {
-                let previous_slice = arena.get_alloc(op.vars.len());
-                let next_slice = arena.get_alloc(op.vars.len());
+            .map(|op| {
+                op.clone().map(|op| {
+                    let previous_slice = arena.get_alloc(op.vars.len());
+                    let next_slice = arena.get_alloc(op.vars.len());
 
-                SimpleOpNode::new(op, previous_slice, next_slice)
-            }))
+                    SimpleOpNode::new(op, previous_slice, next_slice)
+                })
+            })
             .collect::<Vec<_>>();
         let mut nth_ps = vec![];
         self.ops
@@ -82,13 +84,13 @@ impl SimpleOpDiagonal {
             nth_ps,
             p_ends,
             var_ends,
-            arena
+            arena,
         }
     }
 
     pub fn debug_print<H>(&self, h: H)
-        where
-            H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
+    where
+        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
     {
         fn lines_for(a: usize, b: usize) {
             (a..b).for_each(|_| {
@@ -146,8 +148,8 @@ impl OpContainer for SimpleOpDiagonal {
     }
 
     fn weight<H>(&self, h: H) -> f64
-        where
-            H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
+    where
+        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
     {
         self.ops
             .iter()
@@ -210,7 +212,7 @@ pub struct SimpleOpLooper {
     nth_ps: Vec<usize>,
     p_ends: Option<(usize, usize)>,
     var_ends: Vec<Option<(usize, usize)>>,
-    arena: Arena<Option<usize>>
+    arena: Arena<Option<usize>>,
 }
 
 impl SimpleOpLooper {
@@ -224,7 +226,12 @@ impl SimpleOpLooper {
             .collect();
         let mut arena = self.arena;
         arena.clear();
-        SimpleOpDiagonal { ops, n, nvars, arena }
+        SimpleOpDiagonal {
+            ops,
+            n,
+            nvars,
+            arena,
+        }
     }
 }
 
@@ -242,8 +249,8 @@ impl OpContainer for SimpleOpLooper {
     }
 
     fn weight<H>(&self, h: H) -> f64
-        where
-            H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
+    where
+        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
     {
         let mut t = 1.0;
         let mut p = self.p_ends.map(|(p, _)| p);

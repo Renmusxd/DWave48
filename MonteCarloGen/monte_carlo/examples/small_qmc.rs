@@ -3,7 +3,6 @@ use monte_carlo::graph::GraphState;
 use monte_carlo::sse::qmc_graph::new_qmc;
 use std::cmp::max;
 
-
 fn run_transverse_quantum_monte_carlo(
     beta: f64,
     timesteps: usize,

@@ -17,8 +17,43 @@ pub trait OpContainer {
         H: Fn(&[usize], usize, &[bool], &[bool]) -> f64;
 }
 
+pub struct BondWeights {
+    weight_and_cumulative: Vec<(f64, f64)>,
+    total: f64,
+}
+
 pub trait DiagonalUpdater: OpContainer {
     fn set_pth(&mut self, p: usize, op: Option<Op>) -> Option<Op>;
+
+    fn take_bond_weights(&mut self) -> Option<BondWeights> {
+        None
+    }
+    fn return_bond_weights(&mut self, _weights: Option<BondWeights>) {}
+    fn make_bond_weights<'b, H, E>(
+        state: &[bool],
+        hamiltonian: H,
+        num_bonds: usize,
+        bonds_fn: E,
+    ) -> BondWeights
+    where
+        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
+        E: Fn(usize) -> &'b [usize],
+    {
+        let mut total = 0.0;
+        let weight_and_cumulative = (0..num_bonds)
+            .map(|i| {
+                let vars = bonds_fn(i);
+                let substate = vars.iter().map(|v| state[*v]).collect::<Vec<_>>();
+                let weight = hamiltonian(vars, i, &substate, &substate);
+                total += weight;
+                (weight, total)
+            })
+            .collect();
+        BondWeights {
+            weight_and_cumulative,
+            total,
+        }
+    }
 
     fn make_diagonal_update<'b, H, E>(
         &mut self,
@@ -55,46 +90,75 @@ pub trait DiagonalUpdater: OpContainer {
         E: Fn(usize) -> &'b [usize],
     {
         let mut state = state.to_vec();
-        let (num_edges, edges_fn) = edges;
-        // Start by editing the ops list
-        for p in 0..cutoff {
-            let op = self.get_pth(p);
+        let bond_weights = self.take_bond_weights();
 
-            let b = match op {
-                None => rng.gen_range(0, num_edges),
-                Some(op) if op.is_diagonal() => op.bond,
-                Some(Op { vars, outputs, .. }) => {
-                    vars.iter()
-                        .zip(outputs.iter())
-                        .for_each(|(v, b)| state[*v] = *b);
-                    continue;
-                }
-            };
-            let vars = edges_fn(b);
-            let substate = vars.iter().map(|v| state[*v]).collect::<Vec<_>>();
-            let mat_element = hamiltonian(vars, b, &substate, &substate);
-
-            // This is based on equations 19a and 19b of arXiv:1909.10591v1 from 23 Sep 2019
-            let numerator = beta * num_edges as f64 * mat_element;
-            let denominator = (cutoff - self.get_n()) as f64;
-
-            match op {
-                None => {
-                    if numerator > denominator || rng.gen::<f64>() < (numerator / denominator) {
-                        let op = Op::diagonal(vars.to_vec(), b, substate);
-                        self.set_pth(p, Some(op));
-                    }
-                }
-                Some(op) if op.is_diagonal() => {
-                    if denominator + 1.0 > numerator
-                        || rng.gen::<f64>() < ((denominator + 1.0) / numerator)
-                    {
-                        self.set_pth(p, None);
-                    }
-                }
-                _ => (),
-            };
+        // Either use metropolis or heat bath.
+        match bond_weights {
+            None => (0..cutoff).for_each(|p| {
+                self.metropolis_single_diagonal_update(
+                    p,
+                    cutoff,
+                    beta,
+                    &mut state,
+                    &hamiltonian,
+                    &edges,
+                    rng,
+                )
+            }),
+            Some(bond_weights) => unimplemented!(),
         }
+    }
+
+    fn metropolis_single_diagonal_update<'b, H, E, R: Rng>(
+        &mut self,
+        p: usize,
+        cutoff: usize,
+        beta: f64,
+        state: &mut [bool],
+        hamiltonian: H,
+        edges: &(usize, E),
+        rng: &mut R,
+    ) where
+        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
+        E: Fn(usize) -> &'b [usize],
+    {
+        let op = self.get_pth(p);
+        let (num_edges, edges_fn) = edges;
+
+        let b = match op {
+            None => rng.gen_range(0, num_edges),
+            Some(op) if op.is_diagonal() => op.bond,
+            Some(Op { vars, outputs, .. }) => {
+                vars.iter()
+                    .zip(outputs.iter())
+                    .for_each(|(v, b)| state[*v] = *b);
+                return;
+            }
+        };
+        let vars = edges_fn(b);
+        let substate = vars.iter().map(|v| state[*v]).collect::<Vec<_>>();
+        let mat_element = hamiltonian(vars, b, &substate, &substate);
+
+        // This is based on equations 19a and 19b of arXiv:1909.10591v1 from 23 Sep 2019
+        let numerator = beta * (*num_edges as f64) * mat_element;
+        let denominator = (cutoff - self.get_n()) as f64;
+
+        match op {
+            None => {
+                if numerator > denominator || rng.gen::<f64>() < (numerator / denominator) {
+                    let op = Op::diagonal(vars.to_vec(), b, substate);
+                    self.set_pth(p, Some(op));
+                }
+            }
+            Some(op) if op.is_diagonal() => {
+                if denominator + 1.0 > numerator
+                    || rng.gen::<f64>() < ((denominator + 1.0) / numerator)
+                {
+                    self.set_pth(p, None);
+                }
+            }
+            _ => (),
+        };
     }
 }
 

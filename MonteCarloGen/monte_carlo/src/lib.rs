@@ -1,2 +1,2 @@
-pub mod sse;
 pub mod graph;
+pub mod sse;
