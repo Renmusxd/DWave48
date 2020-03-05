@@ -8,48 +8,71 @@ use std::cmp::max;
 type VecEdge = Vec<usize>;
 pub struct QMCGraph<R: Rng> {
     edges: Vec<(VecEdge, f64)>,
-    biases: Vec<f64>,
+    transverse: f64,
     state: Option<Vec<bool>>,
     cutoff: usize,
     op_manager: Option<SimpleOpDiagonal>,
-    energy_offset: f64,
+    twosite_energy_offset: f64,
+    singlesite_energy_offset: f64,
+    use_loop_update: bool,
     rng: R,
 }
 
-pub fn new_qmc(graph: GraphState, cutoff: usize, energy_offset: f64) -> QMCGraph<ThreadRng> {
+pub fn new_qmc(
+    graph: GraphState,
+    transverse: f64,
+    cutoff: usize,
+    use_loop_update: bool,
+) -> QMCGraph<ThreadRng> {
     let rng = rand::thread_rng();
-    QMCGraph::<ThreadRng>::new_with_rng(graph, cutoff, energy_offset, rng)
+    QMCGraph::<ThreadRng>::new_with_rng(graph, transverse, cutoff, use_loop_update, rng)
 }
 
 impl<R: Rng> QMCGraph<R> {
     pub fn new_with_rng<Rg: Rng>(
         graph: GraphState,
+        transverse: f64,
         cutoff: usize,
-        energy_offset: f64,
+        use_loop_update: bool,
         rng: Rg,
     ) -> QMCGraph<Rg> {
+        assert!(graph.biases.into_iter().all(|v| v == 0.0));
+
         let edges = graph
             .edges
             .into_iter()
             .map(|((a, b), j)| (vec![a, b], j))
             .collect::<Vec<_>>();
-        let biases = graph.biases;
+        let twosite_energy_offset = edges
+            .iter()
+            .fold(None, |acc, (_, j)| match acc {
+                None => Some(*j),
+                Some(acc) => Some(if *j < acc { *j } else { acc }),
+            })
+            .unwrap_or(0.0)
+            .abs();
+        let singlesite_energy_offset = transverse;
+
         let state = graph.state;
         let mut ops = SimpleOpDiagonal::new(state.as_ref().map_or(0, |s| s.len()));
         ops.set_min_size(cutoff);
         QMCGraph::<Rg> {
             edges,
-            biases,
+            transverse,
             state,
             op_manager: Some(ops),
             cutoff,
-            energy_offset,
+            twosite_energy_offset,
+            singlesite_energy_offset,
+            use_loop_update,
             rng,
         }
     }
 
-    pub fn timesteps(&mut self, t: u64, beta: f64) {
-        self.timesteps_measure(t, beta, (), |_acc, _state, _weight| (), None);
+    pub fn timesteps(&mut self, t: u64, beta: f64) -> f64 {
+        let (_, average_energy) =
+            self.timesteps_measure(t, beta, (), |_acc, _state, _weight| (), None);
+        average_energy
     }
 
     pub fn timesteps_measure<F, T>(
@@ -64,41 +87,69 @@ impl<R: Rng> QMCGraph<R> {
         F: Fn(T, &[bool], f64) -> T,
     {
         let mut state = self.state.take().unwrap();
+        let nvars = state.len();
         let edges = &self.edges;
-        let biases = &self.biases;
-        let energy_offset = self.energy_offset;
+        let transverse = self.transverse;
+        let twosite_energy_offset = self.twosite_energy_offset;
+        let singlesite_energy_offset = self.singlesite_energy_offset;
         let h = |vars: &[usize], bond: usize, input_state: &[bool], output_state: &[bool]| {
-            hamiltonian(
-                (vars[0], vars[1]),
-                (input_state[0], input_state[1]),
-                (output_state[0], output_state[1]),
-                edges[bond].1,
-                biases,
-                energy_offset,
-            )
+            if vars.len() == 2 {
+                two_site_hamiltonian(
+                    (input_state[0], input_state[1]),
+                    (output_state[0], output_state[1]),
+                    edges[bond].1,
+                    transverse,
+                    twosite_energy_offset,
+                )
+            } else if vars.len() == 1 {
+                single_site_hamiltonian(
+                    input_state[0],
+                    output_state[0],
+                    transverse,
+                    singlesite_energy_offset,
+                )
+            } else {
+                unreachable!()
+            }
         };
 
         let mut acc = init_t;
         let mut steps_measured = 0;
         let mut total_n = 0;
         let sampling_freq = sampling_freq.unwrap_or(1);
+        let vars = (0..nvars).collect::<Vec<_>>();
         for t in 0..timesteps {
             // Start by editing the ops list
-            let rng = &mut self.rng;
             let mut manager = self.op_manager.take().unwrap();
+            let rng = &mut self.rng;
+
             manager.make_diagonal_update_with_rng(
                 self.cutoff,
                 beta,
                 &state,
                 h,
-                (edges.len(), |i| &edges[i].0),
+                (edges.len() + nvars, |i| {
+                    if i < edges.len() {
+                        &edges[i].0
+                    } else {
+                        let i = i - edges.len();
+                        &vars[i..i + 1]
+                    }
+                }),
                 rng,
             );
             self.cutoff = max(self.cutoff, manager.get_n() + manager.get_n() / 2);
 
             let mut manager = manager.convert_to_looper();
             // Now we can do loop updates easily.
-            let state_updates = manager.make_loop_update_with_rng(None, h, rng);
+            if self.use_loop_update {
+                let state_updates = manager.make_loop_update_with_rng(None, h, rng);
+                state_updates.into_iter().for_each(|(i, v)| {
+                    state[i] = v;
+                });
+            }
+
+            let state_updates = manager.flip_each_cluster_rng(0.5, rng);
             state_updates.into_iter().for_each(|(i, v)| {
                 state[i] = v;
             });
@@ -120,9 +171,12 @@ impl<R: Rng> QMCGraph<R> {
 
             self.op_manager = Some(manager.convert_to_diagonal());
         }
-        let average_energy = -(total_n as f64 / (steps_measured as f64 * beta));
         self.state = Some(state);
-        (acc, average_energy)
+        let average_energy = -(total_n as f64 / (steps_measured as f64 * beta));
+        // Get total energy offset (num_vars * singlesite + num_edges * twosite)
+        let offset =
+            twosite_energy_offset * edges.len() as f64 + singlesite_energy_offset * nvars as f64;
+        (acc, average_energy + offset)
     }
 
     pub fn clone_state(&self) -> Vec<bool> {
@@ -132,77 +186,73 @@ impl<R: Rng> QMCGraph<R> {
     pub fn into_vec(self) -> Vec<bool> {
         self.state.unwrap()
     }
-    //
-    // pub fn debug_print(&self) {
-    //    let edges = &self.edges;
-    //    let biases = &self.biases;
-    //    let offset = self.energy_offset;
-    //    let h = |vara: usize,
-    //             varb: usize,
-    //             bond: usize,
-    //             input_state: (bool, bool),
-    //             output_state: (bool, bool)| {
-    //        hamiltonian(
-    //            vara,
-    //            varb,
-    //            bond,
-    //            input_state,
-    //            output_state,
-    //            edges,
-    //            biases,
-    //            offset,
-    //        )
-    //    };
-    //    self.op_manager.debug_print(h)
-    // }
+
+    pub fn debug_print(&self) {
+        let twosite_energy_offset = self.twosite_energy_offset;
+        let singlesite_energy_offset = self.singlesite_energy_offset;
+        let transverse = self.transverse;
+        let edges = &self.edges;
+        let h = |vars: &[usize], bond: usize, input_state: &[bool], output_state: &[bool]| {
+            if vars.len() == 2 {
+                two_site_hamiltonian(
+                    (input_state[0], input_state[1]),
+                    (output_state[0], output_state[1]),
+                    edges[bond].1,
+                    transverse,
+                    twosite_energy_offset,
+                )
+            } else if vars.len() == 1 {
+                single_site_hamiltonian(
+                    input_state[0],
+                    output_state[0],
+                    transverse,
+                    singlesite_energy_offset,
+                )
+            } else {
+                unreachable!()
+            }
+        };
+        if let Some(opm) = self.op_manager.as_ref() {
+            opm.debug_print(h)
+        }
+    }
 }
 
-fn hamiltonian(
-    vars: (usize, usize),
-    input_state: (bool, bool),
-    output_state: (bool, bool),
-    binding: f64,
-    biases: &[f64],
-    offset: f64,
+fn two_site_hamiltonian(
+    inputs: (bool, bool),
+    outputs: (bool, bool),
+    bond: f64,
+    transverse: f64,
+    energy_offset: f64,
 ) -> f64 {
-    let (vara, varb) = vars;
-    let matentry = if input_state == output_state {
-        offset
-            + match input_state {
-                (false, false) => -binding,
-                (false, true) => binding + biases[varb],
-                (true, false) => binding + biases[vara],
-                (true, true) => -binding + biases[vara] + biases[varb],
+    let matentry = if inputs == outputs {
+        energy_offset
+            + match inputs {
+                (false, false) => -bond,
+                (false, true) => bond,
+                (true, false) => bond,
+                (true, true) => -bond,
             }
     } else {
-        0.0
+        let diff_state = (inputs.0 == outputs.0, inputs.1 == outputs.1);
+        match diff_state {
+            (false, false) => 0.0,
+            (true, false) | (false, true) => transverse,
+            (true, true) => unreachable!(),
+        }
     };
     assert!(matentry >= 0.0);
     matentry
 }
 
-#[cfg(test)]
-mod qmc_tests {
-    use super::*;
-    use rand_chacha::ChaCha20Rng;
-
-    #[test]
-    fn single_timestep() {
-        let graph = GraphState::new(&[((0, 1), 1.0)], &[0.0, 0.0]);
-        let rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
-        let mut qmc = QMCGraph::<ChaCha20Rng>::new_with_rng(graph, 10, 3.0, rng);
-        qmc.timesteps(1, 1.0);
-    }
-
-    #[test]
-    fn many_timestep() {
-        let graph = GraphState::new(
-            &[((0, 1), 1.0), ((1, 2), 1.0), ((2, 3), 1.0), ((3, 4), 1.0)],
-            &[0.0, 0.0, 0.0, 0.0, 0.0],
-        );
-        let rng: ChaCha20Rng = rand::SeedableRng::seed_from_u64(12345678);
-        let mut qmc = QMCGraph::<ChaCha20Rng>::new_with_rng(graph, 10, 3.0, rng);
-        qmc.timesteps(1000, 1.0);
-        println!("{:?}", qmc.into_vec())
+fn single_site_hamiltonian(
+    input_state: bool,
+    output_state: bool,
+    transverse: f64,
+    energy_offset: f64,
+) -> f64 {
+    match (input_state, output_state) {
+        (false, false) | (true, true) => energy_offset,
+        (false, true) | (true, false) => transverse,
     }
 }

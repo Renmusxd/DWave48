@@ -1,6 +1,6 @@
 extern crate monte_carlo;
 use monte_carlo::graph::*;
-use monte_carlo::sse::qmc_transverse_graph::new_transverse_qmc;
+use monte_carlo::sse::qmc_graph::new_qmc;
 use pyo3::prelude::*;
 use rayon::prelude::*;
 
@@ -200,7 +200,7 @@ impl Lattice {
                             let gs = GraphState::new(&self.edges, &self.biases);
                             let cutoff = self.nvars;
                             let mut qmc_graph =
-                                new_transverse_qmc(gs, transverse, cutoff, use_loop_update);
+                                new_qmc(gs, transverse, cutoff, use_loop_update);
                             let average_energy = qmc_graph.timesteps(timesteps as u64, beta);
                             (qmc_graph.into_vec(), average_energy)
                         })
@@ -240,7 +240,7 @@ impl Lattice {
                         .map(|_| {
                             let gs = GraphState::new(&self.edges, &self.biases);
                             let mut qmc_graph =
-                                new_transverse_qmc(gs, transverse, cutoff, use_loop_update);
+                                new_qmc(gs, transverse, cutoff, use_loop_update);
                             let ((measure, steps), average_energy) = qmc_graph.timesteps_measure(
                                 timesteps as u64,
                                 beta,

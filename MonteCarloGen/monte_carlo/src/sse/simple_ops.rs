@@ -26,7 +26,7 @@ impl SimpleOpDiagonal {
         }
     }
 
-    pub fn convert_to_looper<'a>(self) -> SimpleOpLooper {
+    pub fn convert_to_looper(self) -> SimpleOpLooper {
         let mut p_ends = None;
         let mut var_ends = vec![None; self.nvars];
         let mut arena = self.arena;
