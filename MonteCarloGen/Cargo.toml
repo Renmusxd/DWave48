@@ -10,6 +10,10 @@ edition = "2018"
 name = "py_monte_carlo"
 crate-type = ["cdylib"]
 
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
 [dependencies]
 rand = "^0.7.2"
 rand_chacha = "^0.2.0"
