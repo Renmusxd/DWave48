@@ -182,6 +182,7 @@ impl Lattice {
         timesteps: usize,
         num_experiments: usize,
         use_loop_update: Option<bool>,
+        use_heatbath_diagonal_update: Option<bool>,
     ) -> PyResult<Vec<(Vec<bool>, f64)>> {
         if self.biases.iter().any(|b| *b != 0.0) {
             Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
@@ -194,12 +195,13 @@ impl Lattice {
                 )),
                 Some(transverse) => {
                     let use_loop_update = use_loop_update.unwrap_or(false);
+                    let use_heatbath_diagonal_update = use_heatbath_diagonal_update.unwrap_or(false);
                     let res = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
                             let gs = GraphState::new(&self.edges, &self.biases);
                             let cutoff = self.nvars;
-                            let mut qmc_graph = new_qmc(gs, transverse, cutoff, use_loop_update);
+                            let mut qmc_graph = new_qmc(gs, transverse, cutoff, use_loop_update, use_heatbath_diagonal_update);
                             let average_energy = qmc_graph.timesteps(timesteps as u64, beta);
                             (qmc_graph.into_vec(), average_energy)
                         })
@@ -217,6 +219,7 @@ impl Lattice {
         num_experiments: usize,
         spin_measurement: Option<(f64, f64)>,
         use_loop_update: Option<bool>,
+        use_heatbath_diagonal_update: Option<bool>,
         exponent: Option<i32>,
         sampling_freq: Option<u64>,
     ) -> PyResult<Vec<(f64, f64)>> {
@@ -231,6 +234,7 @@ impl Lattice {
                 )),
                 Some(transverse) => {
                     let use_loop_update = use_loop_update.unwrap_or(false);
+                    let use_heatbath_diagonal_update = use_heatbath_diagonal_update.unwrap_or(false);
                     let cutoff = self.nvars;
                     let (down_m, up_m) = spin_measurement.unwrap_or((-1.0, 1.0));
                     let exponent = exponent.unwrap_or(1);
@@ -238,7 +242,7 @@ impl Lattice {
                         .into_par_iter()
                         .map(|_| {
                             let gs = GraphState::new(&self.edges, &self.biases);
-                            let mut qmc_graph = new_qmc(gs, transverse, cutoff, use_loop_update);
+                            let mut qmc_graph = new_qmc(gs, transverse, cutoff, use_loop_update, use_heatbath_diagonal_update);
                             let ((measure, steps), average_energy) = qmc_graph.timesteps_measure(
                                 timesteps as u64,
                                 beta,

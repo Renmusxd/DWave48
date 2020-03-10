@@ -15,6 +15,7 @@ pub struct QMCGraph<R: Rng> {
     twosite_energy_offset: f64,
     singlesite_energy_offset: f64,
     use_loop_update: bool,
+    use_heatbath_diagonal_update: bool,
     rng: R,
 }
 
@@ -23,9 +24,17 @@ pub fn new_qmc(
     transverse: f64,
     cutoff: usize,
     use_loop_update: bool,
+    use_heatbath_diagonal_update: bool,
 ) -> QMCGraph<ThreadRng> {
     let rng = rand::thread_rng();
-    QMCGraph::<ThreadRng>::new_with_rng(graph, transverse, cutoff, use_loop_update, rng)
+    QMCGraph::<ThreadRng>::new_with_rng(
+        graph,
+        transverse,
+        cutoff,
+        use_loop_update,
+        use_heatbath_diagonal_update,
+        rng,
+    )
 }
 
 impl<R: Rng> QMCGraph<R> {
@@ -34,6 +43,7 @@ impl<R: Rng> QMCGraph<R> {
         transverse: f64,
         cutoff: usize,
         use_loop_update: bool,
+        use_heatbath_diagonal_update: bool,
         rng: Rg,
     ) -> QMCGraph<Rg> {
         assert!(graph.biases.into_iter().all(|v| v == 0.0));
@@ -65,6 +75,7 @@ impl<R: Rng> QMCGraph<R> {
             twosite_energy_offset,
             singlesite_energy_offset,
             use_loop_update,
+            use_heatbath_diagonal_update,
             rng,
         }
     }
@@ -118,24 +129,35 @@ impl<R: Rng> QMCGraph<R> {
         let mut total_n = 0;
         let sampling_freq = sampling_freq.unwrap_or(1);
         let vars = (0..nvars).collect::<Vec<_>>();
+
+        let num_bonds = edges.len() + nvars;
+        let bonds_fn = |b: usize| -> &[usize] {
+            if b < edges.len() {
+                &edges[b].0
+            } else {
+                let b = b - edges.len();
+                &vars[b..b + 1]
+            }
+        };
+
         for t in 0..timesteps {
             // Start by editing the ops list
             let mut manager = self.op_manager.take().unwrap();
             let rng = &mut self.rng;
 
+            let bond_weights = if self.use_heatbath_diagonal_update {
+                Some(SimpleOpDiagonal::make_bond_weights(
+                    &state, h, num_bonds, bonds_fn,
+                ))
+            } else {
+                None
+            };
             manager.make_diagonal_update_with_rng(
                 self.cutoff,
                 beta,
                 &state,
                 h,
-                (edges.len() + nvars, |i| {
-                    if i < edges.len() {
-                        &edges[i].0
-                    } else {
-                        let i = i - edges.len();
-                        &vars[i..i + 1]
-                    }
-                }),
+                (num_bonds, bonds_fn, bond_weights),
                 rng,
             );
             self.cutoff = max(self.cutoff, manager.get_n() + manager.get_n() / 2);

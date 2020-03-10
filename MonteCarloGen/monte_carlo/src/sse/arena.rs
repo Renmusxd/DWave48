@@ -1,4 +1,3 @@
-use std::fmt::Debug;
 use std::ops::{Index, IndexMut};
 
 #[derive(Clone)]
@@ -29,12 +28,14 @@ impl<T: Clone> Arena<T> {
             start: index,
             stop: index + size,
         };
+        let d = &self.default;
+        self.arena[index.start..index.stop].iter_mut().for_each(|v| *v = d.clone());
         self.index += size;
         index
     }
 }
 
-impl<T: Clone + Debug> Index<&ArenaIndex> for Arena<T> {
+impl<T: Clone> Index<&ArenaIndex> for Arena<T> {
     type Output = [T];
 
     fn index(&self, index: &ArenaIndex) -> &Self::Output {
@@ -42,7 +43,7 @@ impl<T: Clone + Debug> Index<&ArenaIndex> for Arena<T> {
     }
 }
 
-impl<T: Clone + Debug> IndexMut<&ArenaIndex> for Arena<T> {
+impl<T: Clone> IndexMut<&ArenaIndex> for Arena<T> {
     fn index_mut(&mut self, index: &ArenaIndex) -> &mut Self::Output {
         &mut self.arena[index.start..index.stop]
     }

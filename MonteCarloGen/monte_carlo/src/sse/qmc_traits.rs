@@ -20,15 +20,33 @@ pub trait OpContainer {
 pub struct BondWeights {
     weight_and_cumulative: Vec<(f64, f64)>,
     total: f64,
+    error: f64,
+}
+
+impl BondWeights {
+    fn index_for_cumulative(&self, val: f64) -> usize {
+        self.weight_and_cumulative
+            .binary_search_by(|(_, c)| c.partial_cmp(&val).unwrap())
+            .unwrap_or_else(|x| x)
+    }
+
+    fn update_weight(&mut self, b: usize, weight: f64) {
+        let old_weight = self.weight_and_cumulative[b].0;
+        if (old_weight - weight).abs() > self.error {
+            let delta = weight - old_weight;
+            self.total += delta;
+            let n = self.weight_and_cumulative.len();
+            self.weight_and_cumulative[b].0 += delta;
+            self.weight_and_cumulative[b..n]
+                .iter_mut()
+                .for_each(|(_, c)| *c += delta);
+        }
+    }
 }
 
 pub trait DiagonalUpdater: OpContainer {
     fn set_pth(&mut self, p: usize, op: Option<Op>) -> Option<Op>;
 
-    fn take_bond_weights(&mut self) -> Option<BondWeights> {
-        None
-    }
-    fn return_bond_weights(&mut self, _weights: Option<BondWeights>) {}
     fn make_bond_weights<'b, H, E>(
         state: &[bool],
         hamiltonian: H,
@@ -52,6 +70,7 @@ pub trait DiagonalUpdater: OpContainer {
         BondWeights {
             weight_and_cumulative,
             total,
+            error: 1e-16,
         }
     }
 
@@ -61,9 +80,9 @@ pub trait DiagonalUpdater: OpContainer {
         beta: f64,
         state: &[bool],
         hamiltonian: H,
-        num_edges: usize,
-        edges_fn: E,
-    ) where
+        edges: (usize, E, Option<BondWeights>),
+    ) -> Option<BondWeights>
+    where
         H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
         E: Fn(usize) -> &'b [usize],
     {
@@ -72,7 +91,7 @@ pub trait DiagonalUpdater: OpContainer {
             beta,
             state,
             hamiltonian,
-            (num_edges, edges_fn),
+            edges,
             &mut rand::thread_rng(),
         )
     }
@@ -83,30 +102,102 @@ pub trait DiagonalUpdater: OpContainer {
         beta: f64,
         state: &[bool],
         hamiltonian: H,
-        edges: (usize, E),
+        edges: (usize, E, Option<BondWeights>),
         rng: &mut R,
-    ) where
+    ) -> Option<BondWeights>
+    where
         H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
         E: Fn(usize) -> &'b [usize],
     {
         let mut state = state.to_vec();
-        let bond_weights = self.take_bond_weights();
+        let (n_edges, edge_fn, bond_weights) = edges;
 
         // Either use metropolis or heat bath.
         match bond_weights {
-            None => (0..cutoff).for_each(|p| {
-                self.metropolis_single_diagonal_update(
-                    p,
-                    cutoff,
-                    beta,
-                    &mut state,
-                    &hamiltonian,
-                    &edges,
-                    rng,
-                )
-            }),
-            Some(bond_weights) => unimplemented!(),
+            None => {
+                (0..cutoff).for_each(|p| {
+                    self.metropolis_single_diagonal_update(
+                        p,
+                        cutoff,
+                        beta,
+                        &mut state,
+                        &hamiltonian,
+                        (n_edges, &edge_fn),
+                        rng,
+                    )
+                });
+                None
+            }
+            Some(bond_weights) => {
+                let bond_weights = (0..cutoff).fold(bond_weights, |bond_weights, p| {
+                    self.heat_bath_single_diagonal_update(
+                        p,
+                        cutoff,
+                        beta,
+                        &mut state,
+                        &hamiltonian,
+                        (&edge_fn, bond_weights),
+                        rng,
+                    )
+                });
+                Some(bond_weights)
+            }
         }
+    }
+
+    fn heat_bath_single_diagonal_update<'b, H, E, R: Rng>(
+        &mut self,
+        p: usize,
+        cutoff: usize,
+        beta: f64,
+        state: &mut [bool],
+        hamiltonian: H,
+        edges: (E, BondWeights),
+        rng: &mut R,
+    ) -> BondWeights
+    where
+        H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
+        E: Fn(usize) -> &'b [usize],
+    {
+        let op = self.get_pth(p);
+        let (edges_fn, mut bond_weights) = edges;
+
+        match op {
+            None => {
+                let numerator = beta * bond_weights.total;
+                let denominator = (cutoff - self.get_n()) as f64 + numerator;
+                if numerator > denominator || rng.gen_bool(numerator / denominator) {
+                    // Find the bond to use, weighted by their matrix element.
+                    let val = rng.gen_range(0.0, bond_weights.total);
+                    let b = bond_weights.index_for_cumulative(val);
+                    let vars = edges_fn(b);
+                    let substate = vars.iter().map(|v| state[*v]).collect::<Vec<_>>();
+                    let op = Op::diagonal(vars.to_vec(), b, substate);
+                    self.set_pth(p, Some(op));
+                }
+            }
+            Some(op) if op.is_diagonal() => {
+                let numerator = (cutoff - self.get_n() + 1) as f64;
+                let denominator = numerator as f64 + beta * bond_weights.total;
+                if numerator > denominator || rng.gen_bool(numerator / denominator) {
+                    self.set_pth(p, None);
+                }
+            }
+            Some(Op {
+                vars,
+                inputs,
+                outputs,
+                bond,
+                ..
+            }) => {
+                vars.iter()
+                    .zip(outputs.iter())
+                    .for_each(|(v, b)| state[*v] = *b);
+                let weight = hamiltonian(vars, *bond, inputs, outputs);
+                bond_weights.update_weight(*bond, weight);
+            }
+        };
+        bond_weights
     }
 
     fn metropolis_single_diagonal_update<'b, H, E, R: Rng>(
@@ -116,7 +207,7 @@ pub trait DiagonalUpdater: OpContainer {
         beta: f64,
         state: &mut [bool],
         hamiltonian: H,
-        edges: &(usize, E),
+        edges: (usize, E),
         rng: &mut R,
     ) where
         H: Fn(&[usize], usize, &[bool], &[bool]) -> f64,
@@ -140,20 +231,19 @@ pub trait DiagonalUpdater: OpContainer {
         let mat_element = hamiltonian(vars, b, &substate, &substate);
 
         // This is based on equations 19a and 19b of arXiv:1909.10591v1 from 23 Sep 2019
-        let numerator = beta * (*num_edges as f64) * mat_element;
+        let numerator = beta * (num_edges as f64) * mat_element;
         let denominator = (cutoff - self.get_n()) as f64;
 
         match op {
             None => {
-                if numerator > denominator || rng.gen::<f64>() < (numerator / denominator) {
+                if numerator > denominator || rng.gen_bool(numerator / denominator) {
                     let op = Op::diagonal(vars.to_vec(), b, substate);
                     self.set_pth(p, Some(op));
                 }
             }
             Some(op) if op.is_diagonal() => {
-                if denominator + 1.0 > numerator
-                    || rng.gen::<f64>() < ((denominator + 1.0) / numerator)
-                {
+                let denominator = denominator + 1.0;
+                if denominator > numerator || rng.gen_bool(denominator / numerator) {
                     self.set_pth(p, None);
                 }
             }
