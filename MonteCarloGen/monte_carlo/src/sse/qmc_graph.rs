@@ -86,6 +86,25 @@ impl<R: Rng> QMCGraph<R> {
         average_energy
     }
 
+    pub fn timesteps_sample(
+        &mut self,
+        t: u64,
+        beta: f64,
+        sampling_freq: Option<u64>,
+    ) -> (Vec<Vec<bool>>, f64) {
+        let acc = Vec::with_capacity((t / sampling_freq.unwrap_or(1) + 1) as usize);
+        self.timesteps_measure(
+            t,
+            beta,
+            acc,
+            |mut acc, state, _weight| {
+                acc.push(state.to_vec());
+                acc
+            },
+            sampling_freq,
+        )
+    }
+
     pub fn timesteps_measure<F, T>(
         &mut self,
         timesteps: u64,

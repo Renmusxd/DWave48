@@ -30,7 +30,7 @@ impl BondWeights {
             .unwrap_or_else(|x| x)
     }
 
-    fn update_weight(&mut self, b: usize, weight: f64) {
+    fn update_weight(&mut self, b: usize, weight: f64) -> f64 {
         let old_weight = self.weight_and_cumulative[b].0;
         if (old_weight - weight).abs() > self.error {
             let delta = weight - old_weight;
@@ -41,6 +41,7 @@ impl BondWeights {
                 .iter_mut()
                 .for_each(|(_, c)| *c += delta);
         }
+        old_weight
     }
 }
 
@@ -166,7 +167,7 @@ pub trait DiagonalUpdater: OpContainer {
             None => {
                 let numerator = beta * bond_weights.total;
                 let denominator = (cutoff - self.get_n()) as f64 + numerator;
-                if numerator > denominator || rng.gen_bool(numerator / denominator) {
+                if rng.gen_bool(numerator / denominator) {
                     // Find the bond to use, weighted by their matrix element.
                     let val = rng.gen_range(0.0, bond_weights.total);
                     let b = bond_weights.index_for_cumulative(val);
@@ -179,7 +180,7 @@ pub trait DiagonalUpdater: OpContainer {
             Some(op) if op.is_diagonal() => {
                 let numerator = (cutoff - self.get_n() + 1) as f64;
                 let denominator = numerator as f64 + beta * bond_weights.total;
-                if numerator > denominator || rng.gen_bool(numerator / denominator) {
+                if rng.gen_bool(numerator / denominator) {
                     self.set_pth(p, None);
                 }
             }

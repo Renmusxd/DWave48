@@ -3,6 +3,7 @@ use monte_carlo::graph::*;
 use monte_carlo::sse::qmc_graph::new_qmc;
 use pyo3::prelude::*;
 use rayon::prelude::*;
+use std::cmp::min;
 
 #[pyclass]
 struct Lattice {
@@ -179,7 +180,7 @@ impl Lattice {
     fn run_quantum_monte_carlo(
         &self,
         beta: f64,
-        timesteps: usize,
+        timesteps: u64,
         num_experiments: usize,
         use_loop_update: Option<bool>,
         use_heatbath_diagonal_update: Option<bool>,
@@ -195,17 +196,77 @@ impl Lattice {
                 )),
                 Some(transverse) => {
                     let use_loop_update = use_loop_update.unwrap_or(false);
-                    let use_heatbath_diagonal_update = use_heatbath_diagonal_update.unwrap_or(false);
+                    let use_heatbath_diagonal_update =
+                        use_heatbath_diagonal_update.unwrap_or(false);
                     let res = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
                             let gs = GraphState::new(&self.edges, &self.biases);
                             let cutoff = self.nvars;
-                            let mut qmc_graph = new_qmc(gs, transverse, cutoff, use_loop_update, use_heatbath_diagonal_update);
-                            let average_energy = qmc_graph.timesteps(timesteps as u64, beta);
+                            let mut qmc_graph = new_qmc(
+                                gs,
+                                transverse,
+                                cutoff,
+                                use_loop_update,
+                                use_heatbath_diagonal_update,
+                            );
+                            let average_energy = qmc_graph.timesteps(timesteps, beta);
                             (qmc_graph.into_vec(), average_energy)
                         })
                         .collect();
+                    Ok(res)
+                }
+            }
+        }
+    }
+
+    fn run_quantum_monte_carlo_sampling(
+        &self,
+        beta: f64,
+        timesteps: u64,
+        num_experiments: usize,
+        sampling_wait_buffer: Option<u64>,
+        sampling_freq: Option<u64>,
+        use_loop_update: Option<bool>,
+        use_heatbath_diagonal_update: Option<bool>,
+    ) -> PyResult<Vec<(Vec<Vec<bool>>, f64)>> {
+        if self.biases.iter().any(|b| *b != 0.0) {
+            Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
+                "Cannot run quantum monte carlo with spin biases".to_string(),
+            ))
+        } else {
+            match self.transverse {
+                None => Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
+                    "Cannot run quantum monte carlo without transverse field.".to_string(),
+                )),
+                Some(transverse) => {
+                    let use_loop_update = use_loop_update.unwrap_or(false);
+                    let use_heatbath_diagonal_update =
+                        use_heatbath_diagonal_update.unwrap_or(false);
+                    let sampling_wait_buffer =
+                        sampling_wait_buffer.map(|wait| min(wait, timesteps));
+                    let res = (0..num_experiments)
+                        .into_par_iter()
+                        .map(|_| {
+                            let gs = GraphState::new(&self.edges, &self.biases);
+                            let cutoff = self.nvars;
+                            let mut qmc_graph = new_qmc(
+                                gs,
+                                transverse,
+                                cutoff,
+                                use_loop_update,
+                                use_heatbath_diagonal_update,
+                            );
+                            let wait = if let Some(wait) = sampling_wait_buffer {
+                                qmc_graph.timesteps(wait, beta);
+                                wait
+                            } else {
+                                0
+                            };
+
+                            qmc_graph.timesteps_sample(timesteps - wait, beta, sampling_freq)
+                        })
+                        .collect::<Vec<_>>();
                     Ok(res)
                 }
             }
@@ -234,7 +295,8 @@ impl Lattice {
                 )),
                 Some(transverse) => {
                     let use_loop_update = use_loop_update.unwrap_or(false);
-                    let use_heatbath_diagonal_update = use_heatbath_diagonal_update.unwrap_or(false);
+                    let use_heatbath_diagonal_update =
+                        use_heatbath_diagonal_update.unwrap_or(false);
                     let cutoff = self.nvars;
                     let (down_m, up_m) = spin_measurement.unwrap_or((-1.0, 1.0));
                     let exponent = exponent.unwrap_or(1);
@@ -242,7 +304,13 @@ impl Lattice {
                         .into_par_iter()
                         .map(|_| {
                             let gs = GraphState::new(&self.edges, &self.biases);
-                            let mut qmc_graph = new_qmc(gs, transverse, cutoff, use_loop_update, use_heatbath_diagonal_update);
+                            let mut qmc_graph = new_qmc(
+                                gs,
+                                transverse,
+                                cutoff,
+                                use_loop_update,
+                                use_heatbath_diagonal_update,
+                            );
                             let ((measure, steps), average_energy) = qmc_graph.timesteps_measure(
                                 timesteps as u64,
                                 beta,
