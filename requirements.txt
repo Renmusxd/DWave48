@@ -1,3 +1,4 @@
 dwave-ocean-sdk
 scipy
 matplotlib
+numpy==1.18.1
