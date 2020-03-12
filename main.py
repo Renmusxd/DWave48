@@ -3,6 +3,7 @@ import graphbuilder
 import graphanalysis
 import graphdrawing
 import monte_carlo_simulator
+import quantum_monte_carlo_simulator
 import pickle
 import os
 import collections
@@ -13,7 +14,7 @@ from mocksampler import MockSampler
 
 
 class ExperimentConfig:
-    def __init__(self, base_dir, sampler_fn, h=0.0, j=1.0, build_kwargs=None, sample_kwargs=None, machine_temp=14.5e-3, bond_e=12e9, throw_errors=True):
+    def __init__(self, base_dir, sampler_fn, h=0.0, j=1.0, gamma=0.0, build_kwargs=None, sample_kwargs=None, machine_temp=14.5e-3, bond_e=12e9, throw_errors=True):
         """machine_temp in K and bond_e in Hz"""
         self.base_dir = base_dir
         self.sampler_fn = sampler_fn
@@ -25,6 +26,7 @@ class ExperimentConfig:
         self.data = None
         self.h = h
         self.j = j
+        self.gamma = gamma
         self.build_kwargs = build_kwargs or {}
         self.sample_kwargs = sample_kwargs or {}
         self.analyzers = []
@@ -95,6 +97,8 @@ class ExperimentConfig:
             print("Running on dwave... ", end='')
             kwargs_for_sample = self.sample_kwargs or {}
             kwargs_for_sample.update(sample_kwargs or {})
+            if self.gamma:
+                kwargs_for_sample.update({'transverse_field': self.gamma})
             self.response = self.sampler_fn().sample_ising(self.hs, self.graph.edges,
                                                            num_reads=self.num_reads,
                                                            auto_scale=self.auto_scale,
@@ -695,21 +699,26 @@ def staggered_sampler_fn():
     return MockSampler()
 
 
+def quantum_monte_carlo_fn():
+    return quantum_monte_carlo_simulator.QuantumMonteCarloSampler(thermalization_time=0, timesteps=1000, sampling_freq=10)
+
+
 if __name__ == "__main__":
-    experiment_name = "data/lanl_jsweep_square"
+    experiment_name = "data/transverse/test_qmc"
 
     def experiment_gen(base_dir):
         n = 10
         for i in range(1, n+1):
             print("Building experiment {}".format(i))
             h = 0.0  # float(i) / n
-            j = float(i) / n
+            j = 1.0
+            transverse = float(i) / n
             experiment_dir = os.path.join(base_dir, "experiment_{}".format(i))
             if not os.path.exists(experiment_dir):
                 os.makedirs(experiment_dir)
             print("\tUsing directory: {}".format(experiment_dir))
-            config = ExperimentConfig(experiment_dir, monte_carlo_sampler_fn, h=h, j=j, throw_errors=True)
-            config.num_reads = 10000
+            config = ExperimentConfig(experiment_dir, quantum_monte_carlo_fn, h=h, j=j, gamma=transverse, throw_errors=True)
+            config.num_reads = 10
             config.auto_scale = False
             config.build_graph(min_x=7, max_x=15, min_y=0, max_y=8)
             yield config

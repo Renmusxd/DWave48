@@ -1,4 +1,4 @@
-import monte_carlo
+import py_monte_carlo
 import collections
 
 
@@ -31,14 +31,19 @@ class MonteCarloSampler:
         t = int(self.timesteps)
         annealing = [(0, 0.0), (t, self.beta)] if self.annealed else [(0, self.beta), (0, 0.0)]
         all_energies = None
+
+        lattice = py_monte_carlo.Lattice(len(all_vars), edges)
+        for i, h in enumerate(hs):
+            lattice.set_bias(i, h)
+
         if self.read_all_energies:
-            readout = monte_carlo.run_monte_carlo_annealing_and_get_energies(annealing, t, num_reads, edges, hs, self.basic_moves)
+            readout = lattice.run_monte_carlo_annealing_and_get_energies(annealing, t, num_reads, only_basic_moves=self.basic_moves)
             all_energies = [energies for energies, _ in readout]
             readout = [(energies[-1], s) for energies, s in readout]
         elif self.annealed:
-            readout = monte_carlo.run_monte_carlo_annealing(annealing, t, num_reads, edges, hs, self.basic_moves)
+            readout = lattice.run_monte_carlo_annealing(annealing, t, num_reads, only_basic_moves=self.basic_moves)
         else:
-            readout = monte_carlo.run_monte_carlo(self.beta, t, num_reads, edges, hs, self.basic_moves)
+            readout = lattice.run_monte_carlo(self.beta, t, num_reads, only_basic_moves=self.basic_moves)
         readout = [(energy, tuple(s)) for energy, s in readout]
         num_occurences = collections.defaultdict(lambda: 0)
         for energy, s in readout:
