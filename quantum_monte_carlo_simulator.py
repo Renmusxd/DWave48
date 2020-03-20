@@ -28,8 +28,10 @@ class QuantumMonteCarloSampler:
         transverse_field = transverse_field / max_abs_e
 
         effective_timesteps = self.timesteps - self.wait_time
-        samples_per_experiment = int(effective_timesteps / self.sampling_freq)
-        experiments = int(numpy.ceil(num_reads / float(samples_per_experiment)))
+        samples_per_experiment = effective_timesteps / self.sampling_freq
+        experiments = int(numpy.ceil(num_reads / samples_per_experiment))
+
+        print("(Running {} independent experiments each making {} samples)".format(experiments, samples_per_experiment))
 
         lattice = py_monte_carlo.Lattice(len(all_vars), edges)
         lattice.set_transverse_field(transverse_field)

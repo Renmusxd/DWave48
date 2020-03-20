@@ -73,6 +73,8 @@ class ExperimentConfig:
 
     def save_self(self, filepath):
         print("\tSaving self... ", end='')
+        if not os.path.exists(self.base_dir):
+            os.makedirs(self.base_dir)
         with open(filepath, "wb") as w:
             pickle.dump(self, w)
         print("done!")
