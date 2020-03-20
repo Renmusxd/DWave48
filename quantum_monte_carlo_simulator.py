@@ -5,7 +5,7 @@ import collections
 
 
 class QuantumMonteCarloSampler:
-    def __init__(self, beta=39.72, thermalization_time=1e3, timesteps=1e5, sampling_freq=1e3):
+    def __init__(self, beta=39.72, thermalization_time=1e6, timesteps=1e9, sampling_freq=1e3):
         self.beta = beta
         self.timesteps = int(timesteps)
         self.wait_time = int(thermalization_time)

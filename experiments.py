@@ -9,7 +9,8 @@ import os
 
 
 class ExperimentConfig:
-    def __init__(self, base_dir, sampler_fn, h=0.0, j=1.0, gamma=0.0, build_kwargs=None, sample_kwargs=None, machine_temp=14.5e-3, bond_e=12e9, throw_errors=True):
+    def __init__(self, base_dir, sampler_fn, h=0.0, j=1.0, gamma=0.0, build_kwargs=None, sampler_kwargs=None,
+                 sample_kwargs=None, machine_temp=14.5e-3, bond_e=12e9, throw_errors=True):
         """machine_temp in K and bond_e in Hz"""
         self.base_dir = base_dir
         self.sampler_fn = sampler_fn
@@ -23,6 +24,7 @@ class ExperimentConfig:
         self.j = j
         self.gamma = gamma
         self.build_kwargs = build_kwargs or {}
+        self.sampler_kwargs = sampler_kwargs or {}
         self.sample_kwargs = sample_kwargs or {}
         self.analyzers = []
         self.meta_analysis = []
@@ -84,7 +86,7 @@ class ExperimentConfig:
         self.data = config.data
         self.graph = config.graph
 
-    def run_or_load_experiment(self, sample_kwargs=None):
+    def run_or_load_experiment(self, sample_kwargs=None, sampler_kwargs=None):
         filepath = os.path.join(self.base_dir, "config.pickle")
         if not self.maybe_load_self(filepath):
             if self.graph is None:
@@ -92,12 +94,14 @@ class ExperimentConfig:
             print("Running on dwave... ", end='')
             kwargs_for_sample = self.sample_kwargs or {}
             kwargs_for_sample.update(sample_kwargs or {})
+            kwargs_for_sampler = self.sampler_kwargs or {}
+            kwargs_for_sampler.update(kwargs_for_sampler or {})
             if self.gamma:
                 kwargs_for_sample.update({'transverse_field': self.gamma})
-            self.response = self.sampler_fn().sample_ising(self.hs, self.graph.edges,
-                                                           num_reads=self.num_reads,
-                                                           auto_scale=self.auto_scale,
-                                                           **kwargs_for_sample)
+            self.response = self.sampler_fn(**kwargs_for_sampler).sample_ising(self.hs, self.graph.edges,
+                                                                               num_reads=self.num_reads,
+                                                                               auto_scale=self.auto_scale,
+                                                                               **kwargs_for_sample)
             self.data = [({k: sample[k] for k in sample}, energy, num_occurences)
                          for sample, energy, num_occurences in self.response.data()]
             print("done!")
@@ -129,7 +133,8 @@ class ExperimentConfig:
             "ej_by_kt": self.ej_over_kt,
             "j": self.j,
             "inv_j": 1.0 / self.j,
-            "h": self.h
+            "h": self.h,
+            "gamma": self.gamma
         }
         if self.data:
             samples = [sample for sample, _, __ in self.data]
