@@ -75,3 +75,6 @@ class QuantumMonteCarloResponse:
 
     def average_energy(self):
         return self.average_actual_energy
+
+    def scalars(self):
+        return {'average_energy': self.average_actual_energy}

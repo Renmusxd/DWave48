@@ -26,6 +26,7 @@ if __name__ == "__main__":
                 configs = pickle.load(f)
                 print("\tDone!")
     else:
+        print("Making directory: {}".format(base_directory))
         os.makedirs(base_directory)
     if configs is None:
         configs = [config for config in experiment_gen]

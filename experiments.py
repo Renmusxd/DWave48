@@ -138,6 +138,10 @@ class ExperimentConfig:
             "h": self.h,
             "gamma": self.gamma
         }
+
+        if hasattr(self.response, 'scalars'):
+            result_dict.update(self.response.scalars())
+
         if self.data:
             samples = [sample for sample, _, __ in self.data]
             energies = [energy for _, energy, __ in self.data]

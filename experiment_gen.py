@@ -17,12 +17,12 @@ def experiment_generator(base_dir):
         print("\tUsing directory: {}".format(experiment_dir))
         config = ExperimentConfig(experiment_dir,
                                   quantum_monte_carlo_simulator.QuantumMonteCarloSampler,
-                                  sampler_kwargs={'beta': 39.72,
-                                                  'thermalization_time': 1e7,
-                                                  'timesteps': 1e9 + 1e7,
-                                                  'sampling_freq': 1e6},
+                                  sampler_kwargs={'beta': 1.0,  #39.72,
+                                                  'thermalization_time': 1e1,
+                                                  'timesteps': 1e3 + 1e1,
+                                                  'sampling_freq': 1e2},
                                   h=h, j=j, gamma=transverse, throw_errors=True)
-        config.num_reads = 10000
+        config.num_reads = 100
         config.auto_scale = False
         config.build_graph(min_x=7, max_x=15, min_y=0, max_y=8)
         yield config
