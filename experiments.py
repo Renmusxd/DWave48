@@ -10,7 +10,7 @@ import os
 
 class ExperimentConfig:
     def __init__(self, base_dir, sampler_fn, h=0.0, j=1.0, gamma=0.0, build_kwargs=None, sampler_kwargs=None,
-                 sample_kwargs=None, machine_temp=14.5e-3, bond_e=12e9, throw_errors=True):
+                 sample_kwargs=None, ej_over_kt=39.71, throw_errors=True):
         """machine_temp in K and bond_e in Hz"""
         self.base_dir = base_dir
         self.sampler_fn = sampler_fn
@@ -30,14 +30,7 @@ class ExperimentConfig:
         self.meta_analysis = []
         self.throw_errors = throw_errors
 
-        self.machine_temp = machine_temp
-
-        kb = 1.381e-23
-        h = 6.626e-34
-        self.kt = machine_temp * kb
-        self.bond_e = bond_e * h
-        self.e_over_kt = self.bond_e / self.kt
-        self.ej_over_kt = self.e_over_kt * self.j
+        self.ej_over_kt = ej_over_kt
 
     def build_graph(self, max_x=8, max_y=16, min_x=0, min_y=0, hs_override=None, build_kwargs=None):
         gb = graphbuilder.GraphBuilder(j=self.j)
