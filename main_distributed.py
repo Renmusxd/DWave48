@@ -1,3 +1,4 @@
+
 from experiment_gen import experiment_generator
 from experiment_metaanalysis import *
 import argparse
@@ -18,23 +19,18 @@ if __name__ == "__main__":
     pickle_path = os.path.join(base_directory, "configs.pickle")
     experiment_gen = experiment_generator(base_directory)
 
-    configs = None
-    if os.path.exists(base_directory):
-        if os.path.exists(pickle_path):
-            print("Attempting to load experiment configurations from disk")
-            with open(pickle_path, "rb") as f:
-                configs = pickle.load(f)
-                print("\tDone!")
-    else:
+    configs = [config for config in experiment_gen]
+    if not os.path.exists(base_directory):
         print("Making directory: {}".format(base_directory))
         os.makedirs(base_directory)
-    if configs is None:
-        configs = [config for config in experiment_gen]
-        print("Attempting to save experiment configurations to disk")
-        with open(pickle_path, "wb") as w:
-            pickle.dump(configs, w)
-            print("\tDone!")
 
+    if parsed_args.analyze:
+        if not os.path.exists(pickle_path):
+            print("Attempting to save experiment configurations to {}".format(pickle_path))
+            with open(pickle_path, "wb") as w:
+                pickle.dump(configs, w)
+                print("\tDone!")
+    
     shards = parsed_args.shards or list(range(len(configs)))
     experiments_to_run = (exp for i, exp in enumerate(configs)
                           if i in shards)

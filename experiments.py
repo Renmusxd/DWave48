@@ -72,7 +72,7 @@ class ExperimentConfig:
         return False
 
     def save_self(self, filepath):
-        print("\tSaving self... ", end='')
+        print("\tSaving self to {}... ".format(filepath), end='')
         if not os.path.exists(self.base_dir):
             os.makedirs(self.base_dir)
         with open(filepath, "wb") as w:
