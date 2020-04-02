@@ -29,7 +29,9 @@ impl<T: Clone> Arena<T> {
             stop: index + size,
         };
         let d = &self.default;
-        self.arena[index.start..index.stop].iter_mut().for_each(|v| *v = d.clone());
+        self.arena[index.start..index.stop]
+            .iter_mut()
+            .for_each(|v| *v = d.clone());
         self.index += size;
         index
     }

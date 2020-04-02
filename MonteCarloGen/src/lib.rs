@@ -3,7 +3,7 @@ use monte_carlo::graph::*;
 use monte_carlo::sse::qmc_graph::new_qmc;
 use pyo3::prelude::*;
 use rayon::prelude::*;
-use std::cmp::min;
+use std::cmp::{max, min};
 
 #[pyclass]
 struct Lattice {
@@ -15,19 +15,25 @@ struct Lattice {
 
 #[pymethods]
 impl Lattice {
+    /// Make a new lattice with `edges`, positive implies antiferromagnetic bonds, negative is
+    /// ferromagnetic.
     #[new]
-    fn new_lattice(obj: &PyRawObject, nvars: usize, edges: Vec<((usize, usize), f64)>) {
-        let biases = vec![0.0; nvars];
-        obj.init({
-            Lattice {
-                nvars,
-                edges,
-                biases,
-                transverse: None,
-            }
-        });
+    fn new_lattice(obj: &PyRawObject, edges: Vec<((usize, usize), f64)>) {
+        let nvars = edges
+            .iter()
+            .map(|((a, b), _)| max(*a, *b))
+            .max()
+            .map(|x| x + 1)
+            .unwrap_or(1);
+        obj.init(Lattice {
+            nvars,
+            edges,
+            biases: vec![0.0; nvars],
+            transverse: None,
+        })
     }
 
+    /// Set the bias of the variable `var` to `bias`.
     fn set_bias(&mut self, var: usize, bias: f64) -> PyResult<()> {
         if var < self.nvars {
             self.biases[var] = bias;
@@ -40,10 +46,21 @@ impl Lattice {
         }
     }
 
+    /// Set the transverse field on the system to `transverse`
     fn set_transverse_field(&mut self, transverse: f64) {
-        self.transverse = Some(transverse)
+        if transverse != 0.0 {
+            self.transverse = Some(transverse)
+        } else {
+            self.transverse = None
+        }
     }
 
+    /// Run a classical monte carlo simulation.
+    /// # Arguments:
+    /// * `beta`: E/kt to use for the simulation.
+    /// * `timesteps`: number of timesteps to run.
+    /// * `num_experiments`: number of simultaneous experiments to run.
+    /// * `only_basic_moves`: disallow things other than simple spin flips.
     fn run_monte_carlo(
         &self,
         beta: f64,
@@ -70,6 +87,12 @@ impl Lattice {
         }
     }
 
+    /// Run a classical monte carlo simulation with an annealing schedule.
+    /// # Arguments:
+    /// * `betas`: (t,E/kt) array to use for the simulation, interpolates between times linearly.
+    /// * `timesteps`: number of timesteps to run.
+    /// * `num_experiments`: number of simultaneous experiments to run.
+    /// * `only_basic_moves`: disallow things other than simple spin flips.
     fn run_monte_carlo_annealing(
         &self,
         mut betas: Vec<(usize, f64)>,
@@ -123,6 +146,12 @@ impl Lattice {
         }
     }
 
+    /// Run a classical monte carlo simulation with an annealing schedule, returns energies too.
+    /// # Arguments:
+    /// * `beta`: E/kt to use for the simulation.
+    /// * `timesteps`: number of timesteps to run.
+    /// * `num_experiments`: number of simultaneous experiments to run.
+    /// * `only_basic_moves`: disallow things other than simple spin flips.
     fn run_monte_carlo_annealing_and_get_energies(
         &self,
         mut betas: Vec<(usize, f64)>,
@@ -177,6 +206,12 @@ impl Lattice {
         }
     }
 
+    /// Run a quantum monte carlo simulation, return the final state and average energy.
+    ///
+    /// # Arguments:
+    /// * `beta`: E/kt to use for the simulation.
+    /// * `timesteps`: number of timesteps to run.
+    /// * `num_experiments`: number of simultaneous experiments to run.
     fn run_quantum_monte_carlo(
         &self,
         beta: f64,
@@ -220,6 +255,15 @@ impl Lattice {
         }
     }
 
+    /// Run a quantum monte carlo simulation, sample the state at each `sampling_freq`, returns that
+    /// array plus the average energy.
+    ///
+    /// # Arguments:
+    /// * `beta`: E/kt to use for the simulation.
+    /// * `timesteps`: number of timesteps to run.
+    /// * `num_experiments`: number of simultaneous experiments to run.
+    /// * `sampling_wait_buffer`: timesteps to wait before sampling begins.
+    /// * `sampling_freq`: frequency of sampling in number of timesteps.
     fn run_quantum_monte_carlo_sampling(
         &self,
         beta: f64,
@@ -273,16 +317,148 @@ impl Lattice {
         }
     }
 
+    /// Run a quantum monte carlo simulation, get the variable's autocorrelation across time for
+    /// each experiment.
+    ///
+    /// # Arguments:
+    /// * `beta`: E/kt to use for the simulation.
+    /// * `timesteps`: number of timesteps to run.
+    /// * `num_experiments`: number of simultaneous experiments to run.
+    /// * `sampling_wait_buffer`: timesteps to wait before sampling begins.
+    /// * `sampling_freq`: frequency of sampling in number of timesteps.
+    fn run_quantum_monte_carlo_and_measure_variable_autocorrelation(
+        &self,
+        beta: f64,
+        timesteps: u64,
+        num_experiments: usize,
+        sampling_wait_buffer: Option<u64>,
+        sampling_freq: Option<u64>,
+        use_loop_update: Option<bool>,
+        use_heatbath_diagonal_update: Option<bool>,
+    ) -> PyResult<Vec<Vec<f64>>> {
+        if self.biases.iter().any(|b| *b != 0.0) {
+            Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
+                "Cannot run quantum monte carlo with spin biases".to_string(),
+            ))
+        } else {
+            match self.transverse {
+                None => Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
+                    "Cannot run quantum monte carlo without transverse field.".to_string(),
+                )),
+                Some(transverse) => {
+                    let use_loop_update = use_loop_update.unwrap_or(false);
+                    let use_heatbath_diagonal_update =
+                        use_heatbath_diagonal_update.unwrap_or(false);
+                    let sampling_wait_buffer = sampling_wait_buffer.unwrap_or(0);
+                    let res = (0..num_experiments)
+                        .into_par_iter()
+                        .map(|_| {
+                            let gs = GraphState::new(&self.edges, &self.biases);
+                            let cutoff = self.nvars;
+                            let mut qmc_graph = new_qmc(
+                                gs,
+                                transverse,
+                                cutoff,
+                                use_loop_update,
+                                use_heatbath_diagonal_update,
+                            );
+
+                            if sampling_wait_buffer > 0 {
+                                qmc_graph.timesteps(sampling_wait_buffer, beta);
+                            }
+
+                            qmc_graph.calculate_variable_autocorrelation(
+                                timesteps,
+                                beta,
+                                sampling_freq,
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    Ok(res)
+                }
+            }
+        }
+    }
+
+    /// Run a quantum monte carlo simulation, get the bond's autocorrelation across time for each
+    /// experiment.
+    ///
+    /// # Arguments:
+    /// * `beta`: E/kt to use for the simulation.
+    /// * `timesteps`: number of timesteps to run.
+    /// * `num_experiments`: number of simultaneous experiments to run.
+    /// * `sampling_wait_buffer`: timesteps to wait before sampling begins.
+    /// * `sampling_freq`: frequency of sampling in number of timesteps.
+    fn run_quantum_monte_carlo_and_measure_bond_autocorrelation(
+        &self,
+        beta: f64,
+        timesteps: u64,
+        num_experiments: usize,
+        sampling_wait_buffer: Option<u64>,
+        sampling_freq: Option<u64>,
+        use_loop_update: Option<bool>,
+        use_heatbath_diagonal_update: Option<bool>,
+    ) -> PyResult<Vec<Vec<f64>>> {
+        if self.biases.iter().any(|b| *b != 0.0) {
+            Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
+                "Cannot run quantum monte carlo with spin biases".to_string(),
+            ))
+        } else {
+            match self.transverse {
+                None => Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
+                    "Cannot run quantum monte carlo without transverse field.".to_string(),
+                )),
+                Some(transverse) => {
+                    let use_loop_update = use_loop_update.unwrap_or(false);
+                    let use_heatbath_diagonal_update =
+                        use_heatbath_diagonal_update.unwrap_or(false);
+                    let sampling_wait_buffer = sampling_wait_buffer.unwrap_or(0);
+                    let res = (0..num_experiments)
+                        .into_par_iter()
+                        .map(|_| {
+                            let gs = GraphState::new(&self.edges, &self.biases);
+                            let cutoff = self.nvars;
+                            let mut qmc_graph = new_qmc(
+                                gs,
+                                transverse,
+                                cutoff,
+                                use_loop_update,
+                                use_heatbath_diagonal_update,
+                            );
+
+                            if sampling_wait_buffer > 0 {
+                                qmc_graph.timesteps(sampling_wait_buffer, beta);
+                            }
+
+                            qmc_graph.calculate_bond_autocorrelation(timesteps, beta, sampling_freq)
+                        })
+                        .collect::<Vec<_>>();
+                    Ok(res)
+                }
+            }
+        }
+    }
+
+    /// Run a quantum monte carlo simulation, measure the spins using a given 2x2 matrix, then sum
+    /// and raise to the given exponent.
+    ///
+    /// # Arguments:
+    /// * `beta`: E/kt to use for the simulation.
+    /// * `timesteps`: number of timesteps to run.
+    /// * `num_experiments`: number of simultaneous experiments to run.
+    /// * `sampling_freq`: frequency of sampling in number of timesteps.
+    /// * `exponent`: defaults to 1.
     fn run_quantum_monte_carlo_and_measure_spins(
         &self,
         beta: f64,
         timesteps: usize,
         num_experiments: usize,
+        sampling_freq: Option<u64>,
+        sampling_wait_buffer: Option<u64>,
         spin_measurement: Option<(f64, f64)>,
         use_loop_update: Option<bool>,
         use_heatbath_diagonal_update: Option<bool>,
         exponent: Option<i32>,
-        sampling_freq: Option<u64>,
     ) -> PyResult<Vec<(f64, f64)>> {
         if self.biases.iter().any(|b| *b != 0.0) {
             Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
@@ -311,8 +487,14 @@ impl Lattice {
                                 use_loop_update,
                                 use_heatbath_diagonal_update,
                             );
+                            let wait = if let Some(wait) = sampling_wait_buffer {
+                                qmc_graph.timesteps(wait, beta);
+                                wait
+                            } else {
+                                0
+                            };
                             let ((measure, steps), average_energy) = qmc_graph.timesteps_measure(
-                                timesteps as u64,
+                                timesteps as u64 - wait,
                                 beta,
                                 (0.0, 0),
                                 |(acc, step), state, _| {

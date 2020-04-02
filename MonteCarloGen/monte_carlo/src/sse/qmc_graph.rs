@@ -3,6 +3,7 @@ use crate::sse::qmc_traits::*;
 use crate::sse::simple_ops::*;
 use rand::rngs::ThreadRng;
 use rand::Rng;
+use rayon::prelude::*;
 use std::cmp::max;
 
 type VecEdge = Vec<usize>;
@@ -218,6 +219,108 @@ impl<R: Rng> QMCGraph<R> {
         let offset =
             twosite_energy_offset * edges.len() as f64 + singlesite_energy_offset * nvars as f64;
         (acc, average_energy + offset)
+    }
+
+    pub fn calculate_variable_autocorrelation(
+        &mut self,
+        timesteps: u64,
+        beta: f64,
+        sampling_freq: Option<u64>,
+    ) -> Vec<f64> {
+        self.calculate_autocorrelation(timesteps, beta, sampling_freq, |sample| {
+            sample
+                .into_iter()
+                .map(|b| if b { 1.0 } else { 0.0 })
+                .collect()
+        })
+    }
+
+    pub fn calculate_bond_autocorrelation(
+        &mut self,
+        timesteps: u64,
+        beta: f64,
+        sampling_freq: Option<u64>,
+    ) -> Vec<f64> {
+        let edges = self.edges.clone();
+        self.calculate_autocorrelation(timesteps, beta, sampling_freq, |sample| {
+            edges
+                .iter()
+                .map(|(edge, j)| -> f64 {
+                    let all_true = edge.iter().all(|i| sample[*i]);
+                    if *j < 0.0 {
+                        all_true as u64 as f64
+                    } else {
+                        (!all_true) as u64 as f64
+                    }
+                })
+                .collect()
+        })
+    }
+
+    pub fn calculate_autocorrelation<F>(
+        &mut self,
+        timesteps: u64,
+        beta: f64,
+        sampling_freq: Option<u64>,
+        sample_mapper: F,
+    ) -> Vec<f64>
+    where
+        F: Fn(Vec<bool>) -> Vec<f64>,
+    {
+        let acc = Vec::with_capacity((timesteps / sampling_freq.unwrap_or(1) + 1) as usize);
+        let (samples, _) = self.timesteps_measure(
+            timesteps,
+            beta,
+            acc,
+            |mut acc, state, _weight| {
+                acc.push(state.to_vec());
+                acc
+            },
+            sampling_freq,
+        );
+        let samples = samples
+            .into_iter()
+            .map(sample_mapper)
+            .collect::<Vec<Vec<f64>>>();
+
+        let tmax = samples.len();
+        let n: usize = samples[0].len();
+        let mu = (0..n)
+            .map(|i| -> f64 {
+                let total = samples.iter().map(|sample| sample[i]).sum::<f64>();
+                total / samples.len() as f64
+            })
+            .collect::<Vec<_>>();
+
+        (0..tmax)
+            .into_par_iter()
+            .map(|tau| {
+                (0..tmax)
+                    .map(|t| (t, (t + tau) % tmax))
+                    .map(|(ta, tb)| {
+                        let sample_a = &samples[ta];
+                        let sample_b = &samples[tb];
+                        let (d, ma, mb) = sample_a
+                            .iter()
+                            .enumerate()
+                            .zip(sample_b.iter().enumerate())
+                            .fold(
+                                (0.0, 0.0, 0.0),
+                                |(mut dot_acc, mut a_acc, mut b_acc), ((i, a), (j, b))| {
+                                    let da = a - mu[i];
+                                    let db = b - mu[j];
+                                    dot_acc += da * db;
+                                    a_acc += da.powi(2);
+                                    b_acc += db.powi(2);
+                                    (dot_acc, a_acc, b_acc)
+                                },
+                            );
+                        d / (ma * mb).sqrt()
+                    })
+                    .sum::<f64>()
+                    / (tmax as f64)
+            })
+            .collect::<Vec<_>>()
     }
 
     pub fn clone_state(&self) -> Vec<bool> {
