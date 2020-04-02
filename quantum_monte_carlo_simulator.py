@@ -33,7 +33,7 @@ class QuantumMonteCarloSampler:
 
         print("(Running {} independent experiments each making {} samples)".format(experiments, samples_per_experiment))
 
-        lattice = py_monte_carlo.Lattice(len(all_vars), edges)
+        lattice = py_monte_carlo.Lattice(edges)
         lattice.set_transverse_field(transverse_field)
 
         readout = lattice.run_quantum_monte_carlo_sampling(self.beta, self.timesteps, experiments,
