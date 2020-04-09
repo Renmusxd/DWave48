@@ -1,10 +1,13 @@
 use crate::graph::GraphState;
 use crate::sse::qmc_traits::*;
 use crate::sse::simple_ops::*;
+use num::{Complex, Zero};
 use rand::rngs::ThreadRng;
 use rand::Rng;
 use rayon::prelude::*;
+use rustfft::FFTplanner;
 use std::cmp::max;
+use std::ops::DivAssign;
 
 type VecEdge = Vec<usize>;
 pub struct QMCGraph<R: Rng> {
@@ -129,7 +132,6 @@ impl<R: Rng> QMCGraph<R> {
                     (input_state[0], input_state[1]),
                     (output_state[0], output_state[1]),
                     edges[bond].1,
-                    transverse,
                     twosite_energy_offset,
                 )
             } else if vars.len() == 1 {
@@ -226,11 +228,12 @@ impl<R: Rng> QMCGraph<R> {
         timesteps: u64,
         beta: f64,
         sampling_freq: Option<u64>,
+        use_fft: Option<bool>,
     ) -> Vec<f64> {
-        self.calculate_autocorrelation(timesteps, beta, sampling_freq, |sample| {
+        self.calculate_autocorrelation(timesteps, beta, sampling_freq, use_fft, |sample| {
             sample
                 .into_iter()
-                .map(|b| if b { 1.0 } else { 0.0 })
+                .map(|b| if b { 1.0 } else { -1.0 })
                 .collect()
         })
     }
@@ -240,17 +243,19 @@ impl<R: Rng> QMCGraph<R> {
         timesteps: u64,
         beta: f64,
         sampling_freq: Option<u64>,
+        use_fft: Option<bool>,
     ) -> Vec<f64> {
         let edges = self.edges.clone();
-        self.calculate_autocorrelation(timesteps, beta, sampling_freq, |sample| {
+        self.calculate_autocorrelation(timesteps, beta, sampling_freq, use_fft, |sample| {
             edges
                 .iter()
                 .map(|(edge, j)| -> f64 {
-                    let all_true = edge.iter().all(|i| sample[*i]);
-                    if *j < 0.0 {
-                        all_true as u64 as f64
+                    let even = edge.iter().cloned().filter(|i| sample[*i]).count() % 2 == 0;
+                    let b = if *j < 0.0 { even } else { !even };
+                    if b {
+                        1.0
                     } else {
-                        (!all_true) as u64 as f64
+                        -1.0
                     }
                 })
                 .collect()
@@ -262,6 +267,7 @@ impl<R: Rng> QMCGraph<R> {
         timesteps: u64,
         beta: f64,
         sampling_freq: Option<u64>,
+        use_fft: Option<bool>,
         sample_mapper: F,
     ) -> Vec<f64>
     where
@@ -283,44 +289,11 @@ impl<R: Rng> QMCGraph<R> {
             .map(sample_mapper)
             .collect::<Vec<Vec<f64>>>();
 
-        let tmax = samples.len();
-        let n: usize = samples[0].len();
-        let mu = (0..n)
-            .map(|i| -> f64 {
-                let total = samples.iter().map(|sample| sample[i]).sum::<f64>();
-                total / samples.len() as f64
-            })
-            .collect::<Vec<_>>();
-
-        (0..tmax)
-            .into_par_iter()
-            .map(|tau| {
-                (0..tmax)
-                    .map(|t| (t, (t + tau) % tmax))
-                    .map(|(ta, tb)| {
-                        let sample_a = &samples[ta];
-                        let sample_b = &samples[tb];
-                        let (d, ma, mb) = sample_a
-                            .iter()
-                            .enumerate()
-                            .zip(sample_b.iter().enumerate())
-                            .fold(
-                                (0.0, 0.0, 0.0),
-                                |(mut dot_acc, mut a_acc, mut b_acc), ((i, a), (j, b))| {
-                                    let da = a - mu[i];
-                                    let db = b - mu[j];
-                                    dot_acc += da * db;
-                                    a_acc += da.powi(2);
-                                    b_acc += db.powi(2);
-                                    (dot_acc, a_acc, b_acc)
-                                },
-                            );
-                        d / (ma * mb).sqrt()
-                    })
-                    .sum::<f64>()
-                    / (tmax as f64)
-            })
-            .collect::<Vec<_>>()
+        if use_fft.unwrap_or(true) {
+            fft_autocorrelation(&samples)
+        } else {
+            naive_autocorrelation(&samples)
+        }
     }
 
     pub fn clone_state(&self) -> Vec<bool> {
@@ -342,7 +315,6 @@ impl<R: Rng> QMCGraph<R> {
                     (input_state[0], input_state[1]),
                     (output_state[0], output_state[1]),
                     edges[bond].1,
-                    transverse,
                     twosite_energy_offset,
                 )
             } else if vars.len() == 1 {
@@ -366,7 +338,6 @@ fn two_site_hamiltonian(
     inputs: (bool, bool),
     outputs: (bool, bool),
     bond: f64,
-    transverse: f64,
     energy_offset: f64,
 ) -> f64 {
     let matentry = if inputs == outputs {
@@ -381,7 +352,7 @@ fn two_site_hamiltonian(
         let diff_state = (inputs.0 == outputs.0, inputs.1 == outputs.1);
         match diff_state {
             (false, false) => 0.0,
-            (true, false) | (false, true) => transverse,
+            (true, false) | (false, true) => 0.0,
             (true, true) => unreachable!(),
         }
     };
@@ -399,4 +370,82 @@ fn single_site_hamiltonian(
         (false, false) | (true, true) => energy_offset,
         (false, true) | (true, false) => transverse,
     }
+}
+
+pub fn fft_autocorrelation(samples: &[Vec<f64>]) -> Vec<f64> {
+    let tmax = samples.len();
+    let n = samples[0].len();
+
+    let means = (0..n)
+        .map(|i| (0..tmax).map(|t| samples[t][i]).sum::<f64>() / tmax as f64)
+        .collect::<Vec<_>>();
+
+    let mut input = (0..n)
+        .map(|i| {
+            let mut v = (0..tmax)
+                .map(|t| Complex::<f64>::new(samples[t][i] - means[i], 0.0))
+                .collect::<Vec<Complex<f64>>>();
+            let norm = v.iter().map(|v| v.powi(2).re).sum::<f64>().sqrt();
+            v.iter_mut().for_each(|c| c.div_assign(norm));
+            v
+        })
+        .collect::<Vec<_>>();
+    let mut planner = FFTplanner::new(false);
+    let fft = planner.plan_fft(tmax);
+    let mut iplanner = FFTplanner::new(true);
+    let ifft = iplanner.plan_fft(tmax);
+
+    let mut output = vec![Complex::zero(); tmax];
+    input.iter_mut().for_each(|input| {
+        fft.process(input, &mut output);
+        output
+            .iter_mut()
+            .for_each(|c| *c = Complex::new(c.norm_sqr(), 0.0));
+        ifft.process(&mut output, input);
+    });
+
+    (0..tmax)
+        .map(|t| (0..n).map(|i| input[i][t].re).sum::<f64>() / ((n * tmax) as f64))
+        .collect()
+}
+
+pub fn naive_autocorrelation(samples: &[Vec<f64>]) -> Vec<f64> {
+    let tmax = samples.len();
+    let n: usize = samples[0].len();
+    let mu = (0..n)
+        .map(|i| -> f64 {
+            let total = samples.iter().map(|sample| sample[i]).sum::<f64>();
+            total / samples.len() as f64
+        })
+        .collect::<Vec<_>>();
+
+    (0..tmax)
+        .into_par_iter()
+        .map(|tau| {
+            (0..tmax)
+                .map(|t| (t, (t + tau) % tmax))
+                .map(|(ta, tb)| {
+                    let sample_a = &samples[ta];
+                    let sample_b = &samples[tb];
+                    let (d, ma, mb) = sample_a
+                        .iter()
+                        .enumerate()
+                        .zip(sample_b.iter().enumerate())
+                        .fold(
+                            (0.0, 0.0, 0.0),
+                            |(mut dot_acc, mut a_acc, mut b_acc), ((i, a), (j, b))| {
+                                let da = a - mu[i];
+                                let db = b - mu[j];
+                                dot_acc += da * db;
+                                a_acc += da.powi(2);
+                                b_acc += db.powi(2);
+                                (dot_acc, a_acc, b_acc)
+                            },
+                        );
+                    d / (ma * mb).sqrt()
+                })
+                .sum::<f64>()
+                / (tmax as f64)
+        })
+        .collect::<Vec<_>>()
 }

@@ -20,11 +20,13 @@ def experiment_generator(base_dir):
         config = ExperimentConfig(experiment_dir,
                                   quantum_monte_carlo_simulator.QuantumMonteCarloSampler,
                                   sampler_kwargs={'beta': beta,
-                                                  'thermalization_time': 1e6,
-                                                  'timesteps': 1e7 + 1e6,
-                                                  'sampling_freq': 1e3},
-                                  h=h, j=j, gamma=transverse, throw_errors=True)
-        config.num_reads = 10
+                                                  'thermalization_time': 1e2,
+                                                  'timesteps': 1e4 + 1e2,
+                                                  'sampling_freq': 1e2},
+                                  h=h, j=j, gamma=transverse, throw_errors=True,
+                                  ej_over_kt=beta,
+                                  build_kwargs={'ideal_periodic_boundaries': True})
+        config.num_reads = 100
         config.auto_scale = False
         config.build_graph(min_x=7, max_x=15, min_y=0, max_y=8)
         yield config

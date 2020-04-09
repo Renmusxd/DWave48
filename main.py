@@ -62,7 +62,7 @@ def run_experiment_sweep(base_directory, experiment_gen, plot_functions=None):
 
 
 if __name__ == "__main__":
-    experiment_name = "data/transverse/test_qmc"
+    experiment_name = "/tmp/tmp_experiment"
 
     run_experiment_sweep(experiment_name, experiment_generator(experiment_name),
                          plot_functions=[defect_plot, flippable_plot, unit_cell_divergence_plot])

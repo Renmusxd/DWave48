@@ -33,6 +33,9 @@ impl BondWeights {
     fn update_weight(&mut self, b: usize, weight: f64) -> f64 {
         let old_weight = self.weight_and_cumulative[b].0;
         if (old_weight - weight).abs() > self.error {
+            // TODO:
+            // In the heatbath definition in 1812.05326 we see 2|J| used instead of J,
+            // should that become a abs(delta) here?
             let delta = weight - old_weight;
             self.total += delta;
             let n = self.weight_and_cumulative.len();

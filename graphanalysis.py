@@ -460,7 +460,6 @@ class GraphAnalyzer:
         return effective_height_locations, heights
 
 
-
 def get_diagonal_edge_for_unit_cell_edges(edge_a, edge_b, front=True):
     dax, day = edge_a[1][0] - edge_a[0][0], edge_a[1][1] - edge_a[0][1]
     dbx, dby = edge_b[1][0] - edge_b[0][0], edge_b[1][1] - edge_b[0][1]
@@ -494,6 +493,7 @@ def get_connecting_diagonal_dimer(x, y, dx, dy, front=True):
     varb = graphbuilder.var_num(x, y, varb)
 
     return min(vara, varb), max(vara, varb)
+
 
 def get_variable_orientation(var_a, var_b):
     """Returns 0 for vertical, +-1 for diagonal, None for unexpected."""

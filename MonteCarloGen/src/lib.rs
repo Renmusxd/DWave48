@@ -11,6 +11,7 @@ struct Lattice {
     edges: Vec<((usize, usize), f64)>,
     biases: Vec<f64>,
     transverse: Option<f64>,
+    initial_state: Option<Vec<bool>>,
 }
 
 #[pymethods]
@@ -18,19 +19,20 @@ impl Lattice {
     /// Make a new lattice with `edges`, positive implies antiferromagnetic bonds, negative is
     /// ferromagnetic.
     #[new]
-    fn new_lattice(obj: &PyRawObject, edges: Vec<((usize, usize), f64)>) {
+    fn new_lattice(edges: Vec<((usize, usize), f64)>) -> Self {
         let nvars = edges
             .iter()
             .map(|((a, b), _)| max(*a, *b))
             .max()
             .map(|x| x + 1)
             .unwrap_or(1);
-        obj.init(Lattice {
+        Lattice {
             nvars,
             edges,
             biases: vec![0.0; nvars],
             transverse: None,
-        })
+            initial_state: None,
+        }
     }
 
     /// Set the bias of the variable `var` to `bias`.
@@ -47,11 +49,31 @@ impl Lattice {
     }
 
     /// Set the transverse field on the system to `transverse`
-    fn set_transverse_field(&mut self, transverse: f64) {
-        if transverse != 0.0 {
-            self.transverse = Some(transverse)
+    fn set_transverse_field(&mut self, transverse: f64) -> PyResult<()> {
+        if transverse > 0.0 {
+            self.transverse = Some(transverse);
+            Ok(())
+        } else if transverse == 0.0 {
+            self.transverse = None;
+            Ok(())
         } else {
-            self.transverse = None
+            Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
+                "Transverse field must be positive".to_string(),
+            ))
+        }
+    }
+
+    fn set_initial_state(&mut self, initial_state: Vec<bool>) -> PyResult<()> {
+        if initial_state.len() == self.biases.len() {
+            self.initial_state = Some(initial_state);
+            Ok(())
+        } else if initial_state.len() == 0 {
+            self.initial_state = None;
+            Ok(())
+        } else {
+            Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
+                "Initial state must be of the same size as biases, or 0.".to_string(),
+            ))
         }
     }
 
@@ -74,6 +96,9 @@ impl Lattice {
                 .into_par_iter()
                 .map(|_| {
                     let mut gs = GraphState::new(&self.edges, &self.biases);
+                    if let Some(s) = &self.initial_state {
+                        gs.set_state(s.clone())
+                    };
                     (0..timesteps).for_each(|_| gs.do_time_step(beta, only_basic_moves).unwrap());
                     let e = gs.get_energy();
                     (e, gs.get_state())
@@ -122,6 +147,9 @@ impl Lattice {
                 .into_par_iter()
                 .map(|_| {
                     let mut gs = GraphState::new(&self.edges, &self.biases);
+                    if let Some(s) = &self.initial_state {
+                        gs.set_state(s.clone())
+                    };
                     let mut beta_index = 0;
                     (0..timesteps)
                         .try_for_each(|_| {
@@ -181,6 +209,9 @@ impl Lattice {
                 .into_par_iter()
                 .map(|_| {
                     let mut gs = GraphState::new(&self.edges, &self.biases);
+                    if let Some(s) = &self.initial_state {
+                        gs.set_state(s.clone())
+                    };
                     let mut beta_index = 0;
 
                     let v = (0..timesteps)
@@ -233,11 +264,14 @@ impl Lattice {
                     let use_loop_update = use_loop_update.unwrap_or(false);
                     let use_heatbath_diagonal_update =
                         use_heatbath_diagonal_update.unwrap_or(false);
+                    let cutoff = self.nvars;
                     let res = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
-                            let gs = GraphState::new(&self.edges, &self.biases);
-                            let cutoff = self.nvars;
+                            let mut gs = GraphState::new(&self.edges, &self.biases);
+                            if let Some(s) = &self.initial_state {
+                                gs.set_state(s.clone())
+                            };
                             let mut qmc_graph = new_qmc(
                                 gs,
                                 transverse,
@@ -289,11 +323,14 @@ impl Lattice {
                         use_heatbath_diagonal_update.unwrap_or(false);
                     let sampling_wait_buffer =
                         sampling_wait_buffer.map(|wait| min(wait, timesteps));
+                    let cutoff = self.nvars;
                     let res = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
-                            let gs = GraphState::new(&self.edges, &self.biases);
-                            let cutoff = self.nvars;
+                            let mut gs = GraphState::new(&self.edges, &self.biases);
+                            if let Some(s) = &self.initial_state {
+                                gs.set_state(s.clone())
+                            };
                             let mut qmc_graph = new_qmc(
                                 gs,
                                 transverse,
@@ -335,6 +372,7 @@ impl Lattice {
         sampling_freq: Option<u64>,
         use_loop_update: Option<bool>,
         use_heatbath_diagonal_update: Option<bool>,
+        use_fft: Option<bool>,
     ) -> PyResult<Vec<Vec<f64>>> {
         if self.biases.iter().any(|b| *b != 0.0) {
             Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
@@ -350,11 +388,14 @@ impl Lattice {
                     let use_heatbath_diagonal_update =
                         use_heatbath_diagonal_update.unwrap_or(false);
                     let sampling_wait_buffer = sampling_wait_buffer.unwrap_or(0);
+                    let cutoff = self.nvars;
                     let res = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
-                            let gs = GraphState::new(&self.edges, &self.biases);
-                            let cutoff = self.nvars;
+                            let mut gs = GraphState::new(&self.edges, &self.biases);
+                            if let Some(s) = &self.initial_state {
+                                gs.set_state(s.clone())
+                            };
                             let mut qmc_graph = new_qmc(
                                 gs,
                                 transverse,
@@ -371,6 +412,7 @@ impl Lattice {
                                 timesteps,
                                 beta,
                                 sampling_freq,
+                                use_fft,
                             )
                         })
                         .collect::<Vec<_>>();
@@ -398,6 +440,7 @@ impl Lattice {
         sampling_freq: Option<u64>,
         use_loop_update: Option<bool>,
         use_heatbath_diagonal_update: Option<bool>,
+        use_fft: Option<bool>,
     ) -> PyResult<Vec<Vec<f64>>> {
         if self.biases.iter().any(|b| *b != 0.0) {
             Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
@@ -413,11 +456,14 @@ impl Lattice {
                     let use_heatbath_diagonal_update =
                         use_heatbath_diagonal_update.unwrap_or(false);
                     let sampling_wait_buffer = sampling_wait_buffer.unwrap_or(0);
+                    let cutoff = self.nvars;
                     let res = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
-                            let gs = GraphState::new(&self.edges, &self.biases);
-                            let cutoff = self.nvars;
+                            let mut gs = GraphState::new(&self.edges, &self.biases);
+                            if let Some(s) = &self.initial_state {
+                                gs.set_state(s.clone())
+                            };
                             let mut qmc_graph = new_qmc(
                                 gs,
                                 transverse,
@@ -430,7 +476,12 @@ impl Lattice {
                                 qmc_graph.timesteps(sampling_wait_buffer, beta);
                             }
 
-                            qmc_graph.calculate_bond_autocorrelation(timesteps, beta, sampling_freq)
+                            qmc_graph.calculate_bond_autocorrelation(
+                                timesteps,
+                                beta,
+                                sampling_freq,
+                                use_fft,
+                            )
                         })
                         .collect::<Vec<_>>();
                     Ok(res)
@@ -479,7 +530,10 @@ impl Lattice {
                     let res = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
-                            let gs = GraphState::new(&self.edges, &self.biases);
+                            let mut gs = GraphState::new(&self.edges, &self.biases);
+                            if let Some(s) = &self.initial_state {
+                                gs.set_state(s.clone())
+                            };
                             let mut qmc_graph = new_qmc(
                                 gs,
                                 transverse,

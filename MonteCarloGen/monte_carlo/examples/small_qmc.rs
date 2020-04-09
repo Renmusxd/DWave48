@@ -64,25 +64,50 @@ fn run_transverse_quantum_monte_carlo_and_measure_spins(
 }
 
 fn main() {
-    let result = run_transverse_quantum_monte_carlo_and_measure_spins(
-        40.0,
-        100000,
-        8,
-        vec![
-            ((0, 1), -1.0),
-            ((1, 2), 1.0),
-            ((2, 3), 1.0),
-            ((3, 0), 1.0),
-            ((1, 7), 1.0),
-            ((4, 5), -1.0),
-            ((5, 6), 1.0),
-            ((6, 7), 1.0),
-            ((7, 4), 1.0),
-        ],
-        8,
-        1.0,
-        None,
-        Some(2),
-    );
-    println!("{:?}", result)
+    let edges = vec![
+        ((0, 1), -1.0),
+        ((1, 2), 1.0),
+        ((2, 3), 1.0),
+        ((3, 0), 1.0),
+        ((1, 7), 1.0),
+        ((4, 5), -1.0),
+        ((5, 6), 1.0),
+        ((6, 7), 1.0),
+        ((7, 4), 1.0),
+    ];
+    let biases = vec![0.0; 8];
+    let transverse = 1.0;
+
+    let n = 2048;
+
+    let gs = GraphState::new(&edges, &biases);
+    let mut qmc_graph = new_qmc(gs, transverse, biases.len(), false, false);
+    let a = qmc_graph.calculate_bond_autocorrelation(n, 1.0, None, Some(false));
+    let b = qmc_graph.calculate_bond_autocorrelation(n, 1.0, None, Some(true));
+
+    a.into_iter().zip(b.into_iter()).for_each(|(a, b)| {
+        println!("{}\t{}", a, b);
+    })
+
+    // let result = run_transverse_quantum_monte_carlo_and_measure_spins(
+    //     40.0,
+    //     100000,
+    //     8,
+    //     vec![
+    //         ((0, 1), -1.0),
+    //         ((1, 2), 1.0),
+    //         ((2, 3), 1.0),
+    //         ((3, 0), 1.0),
+    //         ((1, 7), 1.0),
+    //         ((4, 5), -1.0),
+    //         ((5, 6), 1.0),
+    //         ((6, 7), 1.0),
+    //         ((7, 4), 1.0),
+    //     ],
+    //     8,
+    //     1.0,
+    //     None,
+    //     Some(2),
+    // );
+    // println!("{:?}", result)
 }

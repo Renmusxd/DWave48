@@ -27,6 +27,11 @@ impl Debug for GraphState {
 pub type Edge = (usize, usize);
 impl GraphState {
     pub fn new(edges: &[(Edge, f64)], biases: &[f64]) -> Self {
+        let state = GraphState::make_random_spin_state(biases.len());
+        Self::new_with_state(state, edges, biases)
+    }
+
+    pub fn new_with_state(state: Vec<bool>, edges: &[(Edge, f64)], biases: &[f64]) -> Self {
         // Matrix of all bonds.
         let mut binding_mat: Vec<Vec<(usize, f64)>> = vec![vec![]; biases.len() * biases.len()];
 
@@ -43,7 +48,7 @@ impl GraphState {
             edges: edges.to_vec(),
             binding_mat,
             biases: biases.to_vec(),
-            state: Some(GraphState::make_random_spin_state(biases.len())),
+            state: Some(state),
         }
     }
 
