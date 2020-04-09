@@ -14,24 +14,30 @@ struct Lattice {
     initial_state: Option<Vec<bool>>,
 }
 
+/// A lattice for running monte carlo simulations. Takes a list of edges: ((a, b), j), ...
 #[pymethods]
 impl Lattice {
     /// Make a new lattice with `edges`, positive implies antiferromagnetic bonds, negative is
     /// ferromagnetic.
     #[new]
-    fn new_lattice(edges: Vec<((usize, usize), f64)>) -> Self {
+    fn new_lattice(edges: Vec<((usize, usize), f64)>) -> PyResult<Self> {
         let nvars = edges
             .iter()
             .map(|((a, b), _)| max(*a, *b))
             .max()
-            .map(|x| x + 1)
-            .unwrap_or(1);
-        Lattice {
-            nvars,
-            edges,
-            biases: vec![0.0; nvars],
-            transverse: None,
-            initial_state: None,
+            .map(|x| x + 1);
+        if let Some(nvars) = nvars {
+            Ok(Lattice {
+                nvars,
+                edges,
+                biases: vec![0.0; nvars],
+                transverse: None,
+                initial_state: None,
+            })
+        } else {
+            Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
+                "Must supply some edges for graph".to_string(),
+            ))
         }
     }
 
@@ -63,11 +69,12 @@ impl Lattice {
         }
     }
 
+    /// Set the initial state for monte carlo, if it's empty then choose a random state each time.
     fn set_initial_state(&mut self, initial_state: Vec<bool>) -> PyResult<()> {
         if initial_state.len() == self.biases.len() {
             self.initial_state = Some(initial_state);
             Ok(())
-        } else if initial_state.len() == 0 {
+        } else if initial_state.is_empty() {
             self.initial_state = None;
             Ok(())
         } else {
@@ -78,6 +85,7 @@ impl Lattice {
     }
 
     /// Run a classical monte carlo simulation.
+    ///
     /// # Arguments:
     /// * `beta`: E/kt to use for the simulation.
     /// * `timesteps`: number of timesteps to run.
@@ -113,6 +121,7 @@ impl Lattice {
     }
 
     /// Run a classical monte carlo simulation with an annealing schedule.
+    ///
     /// # Arguments:
     /// * `betas`: (t,E/kt) array to use for the simulation, interpolates between times linearly.
     /// * `timesteps`: number of timesteps to run.
@@ -175,6 +184,7 @@ impl Lattice {
     }
 
     /// Run a classical monte carlo simulation with an annealing schedule, returns energies too.
+    ///
     /// # Arguments:
     /// * `beta`: E/kt to use for the simulation.
     /// * `timesteps`: number of timesteps to run.
