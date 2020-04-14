@@ -19,7 +19,7 @@ rand = "^0.7"
 rand_chacha = "^0.2"
 rayon = "^1.2"
 num = "^0.2"
-monte_carlo = { path = "monte_carlo" }
+monte_carlo = { path = "monte_carlo", version = "^0.1" }
 
 [dependencies.pyo3]
 version = "^0.9"

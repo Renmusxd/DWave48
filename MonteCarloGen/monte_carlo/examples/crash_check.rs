@@ -9,8 +9,6 @@ fn main() {
     let transverse = 1.0;
 
     let timesteps = 1000;
-    let sampling_wait_buffer = Some(100);
-    let sampling_freq = Some(1);
 
     let indices: Vec<(usize, usize)> = (0usize..side_len)
         .map(|i| {
@@ -40,12 +38,5 @@ fn main() {
     let cutoff = nvars;
     let mut qmc_graph = new_qmc(gs, transverse, cutoff, false, false);
 
-    let wait = if let Some(wait) = sampling_wait_buffer {
-        qmc_graph.timesteps(wait, beta);
-        wait
-    } else {
-        0
-    };
-
-    let plot = qmc_graph.calculate_bond_autocorrelation(timesteps - wait, beta, sampling_freq);
+    let plot = qmc_graph.timesteps_sample(timesteps, beta, None);
 }
