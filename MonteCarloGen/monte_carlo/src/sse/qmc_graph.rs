@@ -1,4 +1,4 @@
-use crate::graph::GraphState;
+use crate::graph::{GraphState, Edge};
 use crate::sse::qmc_traits::*;
 use crate::sse::simple_ops::*;
 use num::{Complex, Zero};
@@ -24,6 +24,26 @@ pub struct QMCGraph<R: Rng> {
 }
 
 pub fn new_qmc(
+    edges: Vec<(Edge, f64)>,
+    transverse: f64,
+    cutoff: usize,
+    use_loop_update: bool,
+    use_heatbath_diagonal_update: bool,
+    state: Option<Vec<bool>>
+) -> QMCGraph<ThreadRng> {
+    let rng = rand::thread_rng();
+    QMCGraph::<ThreadRng>::new_with_rng(
+        edges,
+        transverse,
+        cutoff,
+        use_loop_update,
+        use_heatbath_diagonal_update,
+        rng,
+        state
+    )
+}
+
+pub fn new_qmc_from_graph(
     graph: GraphState,
     transverse: f64,
     cutoff: usize,
@@ -31,7 +51,7 @@ pub fn new_qmc(
     use_heatbath_diagonal_update: bool,
 ) -> QMCGraph<ThreadRng> {
     let rng = rand::thread_rng();
-    QMCGraph::<ThreadRng>::new_with_rng(
+    QMCGraph::<ThreadRng>::new_from_graph(
         graph,
         transverse,
         cutoff,
@@ -43,17 +63,16 @@ pub fn new_qmc(
 
 impl<R: Rng> QMCGraph<R> {
     pub fn new_with_rng<Rg: Rng>(
-        graph: GraphState,
+        edges: Vec<(Edge, f64)>,
         transverse: f64,
         cutoff: usize,
         use_loop_update: bool,
         use_heatbath_diagonal_update: bool,
         rng: Rg,
+        state: Option<Vec<bool>>
     ) -> QMCGraph<Rg> {
-        assert!(graph.biases.into_iter().all(|v| v == 0.0));
-
-        let edges = graph
-            .edges
+        let nvars = edges.iter().map(|((a,b), _)| max(*a, *b)).max().unwrap() + 1;
+        let edges = edges
             .into_iter()
             .map(|((a, b), j)| (vec![a, b], j))
             .collect::<Vec<_>>();
@@ -66,10 +85,15 @@ impl<R: Rng> QMCGraph<R> {
             .unwrap_or(0.0)
             .abs();
         let singlesite_energy_offset = transverse;
-
-        let state = graph.state;
-        let mut ops = SimpleOpDiagonal::new(state.as_ref().map_or(0, |s| s.len()));
+        let mut ops = SimpleOpDiagonal::new(nvars);
         ops.set_min_size(cutoff);
+
+        let state = match state {
+            Some(state) => state,
+            None => GraphState::make_random_spin_state(nvars)
+        };
+        let state = Some(state);
+
         QMCGraph::<Rg> {
             edges,
             transverse,
@@ -82,6 +106,18 @@ impl<R: Rng> QMCGraph<R> {
             use_heatbath_diagonal_update,
             rng,
         }
+    }
+
+    pub fn new_from_graph<Rg: Rng>(
+        graph: GraphState,
+        transverse: f64,
+        cutoff: usize,
+        use_loop_update: bool,
+        use_heatbath_diagonal_update: bool,
+        rng: Rg,
+    ) -> QMCGraph<Rg> {
+        assert!(graph.biases.into_iter().all(|v| v == 0.0));
+        Self::new_with_rng(graph.edges, transverse, cutoff, use_loop_update, use_heatbath_diagonal_update, rng, graph.state)
     }
 
     pub fn timesteps(&mut self, t: u64, beta: f64) -> f64 {

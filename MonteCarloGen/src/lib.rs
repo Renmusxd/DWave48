@@ -278,17 +278,15 @@ impl Lattice {
                     let res = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
-                            let mut gs = GraphState::new(&self.edges, &self.biases);
-                            if let Some(s) = &self.initial_state {
-                                gs.set_state(s.clone())
-                            };
                             let mut qmc_graph = new_qmc(
-                                gs,
+                                self.edges.clone(),
                                 transverse,
                                 cutoff,
                                 use_loop_update,
                                 use_heatbath_diagonal_update,
+                                self.initial_state.clone(),
                             );
+
                             let average_energy = qmc_graph.timesteps(timesteps, beta);
                             (qmc_graph.into_vec(), average_energy)
                         })
@@ -337,16 +335,13 @@ impl Lattice {
                     let res = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
-                            let mut gs = GraphState::new(&self.edges, &self.biases);
-                            if let Some(s) = &self.initial_state {
-                                gs.set_state(s.clone())
-                            };
                             let mut qmc_graph = new_qmc(
-                                gs,
+                                self.edges.clone(),
                                 transverse,
                                 cutoff,
                                 use_loop_update,
                                 use_heatbath_diagonal_update,
+                                self.initial_state.clone(),
                             );
                             let wait = if let Some(wait) = sampling_wait_buffer {
                                 qmc_graph.timesteps(wait, beta);
@@ -402,16 +397,13 @@ impl Lattice {
                     let res = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
-                            let mut gs = GraphState::new(&self.edges, &self.biases);
-                            if let Some(s) = &self.initial_state {
-                                gs.set_state(s.clone())
-                            };
                             let mut qmc_graph = new_qmc(
-                                gs,
+                                self.edges.clone(),
                                 transverse,
                                 cutoff,
                                 use_loop_update,
                                 use_heatbath_diagonal_update,
+                                self.initial_state.clone(),
                             );
 
                             if sampling_wait_buffer > 0 {
@@ -470,16 +462,13 @@ impl Lattice {
                     let res = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
-                            let mut gs = GraphState::new(&self.edges, &self.biases);
-                            if let Some(s) = &self.initial_state {
-                                gs.set_state(s.clone())
-                            };
                             let mut qmc_graph = new_qmc(
-                                gs,
+                                self.edges.clone(),
                                 transverse,
                                 cutoff,
                                 use_loop_update,
                                 use_heatbath_diagonal_update,
+                                self.initial_state.clone(),
                             );
 
                             if sampling_wait_buffer > 0 {
@@ -540,17 +529,15 @@ impl Lattice {
                     let res = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
-                            let mut gs = GraphState::new(&self.edges, &self.biases);
-                            if let Some(s) = &self.initial_state {
-                                gs.set_state(s.clone())
-                            };
                             let mut qmc_graph = new_qmc(
-                                gs,
+                                self.edges.clone(),
                                 transverse,
                                 cutoff,
                                 use_loop_update,
                                 use_heatbath_diagonal_update,
+                                self.initial_state.clone(),
                             );
+
                             let wait = if let Some(wait) = sampling_wait_buffer {
                                 qmc_graph.timesteps(wait, beta);
                                 wait

@@ -27,7 +27,7 @@ impl Debug for GraphState {
 pub type Edge = (usize, usize);
 impl GraphState {
     pub fn new(edges: &[(Edge, f64)], biases: &[f64]) -> Self {
-        let state = GraphState::make_random_spin_state(biases.len());
+        let state = Self::make_random_spin_state(biases.len());
         Self::new_with_state(state, edges, biases)
     }
 
@@ -194,7 +194,7 @@ impl GraphState {
         }
     }
 
-    fn make_random_spin_state(n: usize) -> Vec<bool> {
+    pub fn make_random_spin_state(n: usize) -> Vec<bool> {
         (0..n).map(|_| -> bool { rand::random() }).collect()
     }
 }

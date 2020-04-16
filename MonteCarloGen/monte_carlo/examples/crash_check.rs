@@ -3,7 +3,7 @@ use monte_carlo::graph::GraphState;
 use monte_carlo::sse::qmc_graph::new_qmc;
 
 fn main() {
-    let side_len = 10;
+    let side_len = 24;
     let nvars = side_len * side_len;
     let beta = 1.0;
     let transverse = 1.0;
@@ -32,11 +32,9 @@ fn main() {
         .chain(down_connects)
         .map(|(i, j)| ((i, j), 1.0))
         .collect::<Vec<_>>();
-    let biases = vec![0.0; nvars];
 
-    let gs = GraphState::new(&edges, &biases);
     let cutoff = nvars;
-    let mut qmc_graph = new_qmc(gs, transverse, cutoff, false, false);
+    let mut qmc_graph = new_qmc(edges, transverse, cutoff, false, false, None);
 
     let plot = qmc_graph.timesteps_sample(timesteps, beta, None);
 }
