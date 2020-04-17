@@ -36,23 +36,21 @@ class QuantumMonteCarloSampler:
         lattice = py_monte_carlo.Lattice(edges)
         lattice.set_transverse_field(transverse_field)
 
-        readout = lattice.run_quantum_monte_carlo_sampling(self.beta, self.timesteps, experiments,
-                                                           sampling_wait_buffer=self.wait_time,
-                                                           sampling_freq=self.sampling_freq,
-                                                           use_loop_update=False,
-                                                           use_heatbath_diagonal_update=False)
+        # TODO test this code after numpy changes.
+        energies, states = lattice.run_quantum_monte_carlo_sampling(self.beta, self.timesteps, experiments,
+                                                                    sampling_wait_buffer=self.wait_time,
+                                                                    sampling_freq=self.sampling_freq,
+                                                                    use_loop_update=False,
+                                                                    use_heatbath_diagonal_update=False)
 
-        total_energy = 0
-        states = []
-        for state_list, energy in readout:
-            total_energy += energy
-            states.extend(state_list)
-        states = [tuple(s) for s in states[:num_reads]]
-        average_energy = total_energy / len(readout)
+        # Flatten except variables
+        states = states.reshape((-1, states.shape[-1]))
+
+        average_energy = numpy.mean(energies)
 
         num_occurences = collections.defaultdict(lambda: 0)
         for s in states:
-            num_occurences[s] += 1
+            num_occurences[tuple(s)] += 1
 
         def f(v):
             if v:
@@ -60,7 +58,7 @@ class QuantumMonteCarloSampler:
             else:
                 return -1
 
-        states = [({all_vars[i]: f(v) for i, v in enumerate(s)}, s) for s in states]
+        states = [({all_vars[i]: f(v) for i, v in enumerate(s)}, tuple(s)) for s in states]
         readout = [(s, graphbuilder.energy_of_bonds(original_edges, s), num_occurences[ts]) for s, ts in states]
         return QuantumMonteCarloResponse(readout, average_actual_energy=average_energy)
 

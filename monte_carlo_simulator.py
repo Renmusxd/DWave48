@@ -36,14 +36,16 @@ class MonteCarloSampler:
         for i, h in enumerate(hs):
             lattice.set_bias(i, h)
 
+        # TODO: verify the changes here since switching to numpy code
         if self.read_all_energies:
-            readout = lattice.run_monte_carlo_annealing_and_get_energies(annealing, t, num_reads, only_basic_moves=self.basic_moves)
-            all_energies = [energies for energies, _ in readout]
-            readout = [(energies[-1], s) for energies, s in readout]
+            all_energies, ss = lattice.run_monte_carlo_annealing_and_get_energies(annealing, t, num_reads, only_basic_moves=self.basic_moves)
+            readout = ((energies[-1], s) for energies, s in zip(all_energies, ss))
         elif self.annealed:
-            readout = lattice.run_monte_carlo_annealing(annealing, t, num_reads, only_basic_moves=self.basic_moves)
+            es, ss = lattice.run_monte_carlo_annealing(annealing, t, num_reads, only_basic_moves=self.basic_moves)
+            readout = zip(es, ss)
         else:
-            readout = lattice.run_monte_carlo(self.beta, t, num_reads, only_basic_moves=self.basic_moves)
+            es, ss = lattice.run_monte_carlo(self.beta, t, num_reads, only_basic_moves=self.basic_moves)
+            readout = zip(es, ss)
         readout = [(energy, tuple(s)) for energy, s in readout]
         num_occurences = collections.defaultdict(lambda: 0)
         for energy, s in readout:

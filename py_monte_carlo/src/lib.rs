@@ -1,6 +1,8 @@
 extern crate monte_carlo;
 use monte_carlo::graph::*;
 use monte_carlo::sse::qmc_graph::new_qmc;
+use ndarray::{Array, Array2, Array3};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3};
 use pyo3::prelude::*;
 use rayon::prelude::*;
 use std::cmp::{max, min};
@@ -93,14 +95,15 @@ impl Lattice {
     /// * `only_basic_moves`: disallow things other than simple spin flips.
     fn run_monte_carlo(
         &self,
+        py: Python,
         beta: f64,
         timesteps: usize,
         num_experiments: usize,
         only_basic_moves: Option<bool>,
-    ) -> PyResult<Vec<(f64, Vec<bool>)>> {
+    ) -> PyResult<(Py<PyArray1<f64>>, Py<PyArray2<bool>>)> {
         if self.transverse.is_none() {
             let only_basic_moves = only_basic_moves.unwrap_or(false);
-            let res = (0..num_experiments)
+            let (energies, states): (Vec<f64>, Vec<Vec<bool>>) = (0..num_experiments)
                 .into_par_iter()
                 .map(|_| {
                     let mut gs = GraphState::new(&self.edges, &self.biases);
@@ -111,8 +114,15 @@ impl Lattice {
                     let e = gs.get_energy();
                     (e, gs.get_state())
                 })
-                .collect();
-            Ok(res)
+                .unzip();
+            let py_energies = Array::from(energies).into_pyarray(py).to_owned();
+            let flat_states = states.into_iter().flatten().collect();
+            let py_states = Array2::from_shape_vec((num_experiments, self.nvars), flat_states)
+                .unwrap()
+                .into_pyarray(py)
+                .to_owned();
+
+            Ok((py_energies, py_states))
         } else {
             Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
                 "Cannot run classic monte carlo with transverse field".to_string(),
@@ -129,11 +139,12 @@ impl Lattice {
     /// * `only_basic_moves`: disallow things other than simple spin flips.
     fn run_monte_carlo_annealing(
         &self,
+        py: Python,
         mut betas: Vec<(usize, f64)>,
         timesteps: usize,
         num_experiments: usize,
         only_basic_moves: Option<bool>,
-    ) -> PyResult<Vec<(f64, Vec<bool>)>> {
+    ) -> PyResult<(Py<PyArray1<f64>>, Py<PyArray2<bool>>)> {
         if self.transverse.is_none() {
             let only_basic_moves = only_basic_moves.unwrap_or(false);
             betas.sort_by_key(|(i, _)| *i);
@@ -152,7 +163,7 @@ impl Lattice {
                 betas.push((timesteps, v));
             }
 
-            let res = (0..num_experiments)
+            let (energies, states): (Vec<f64>, Vec<Vec<bool>>) = (0..num_experiments)
                 .into_par_iter()
                 .map(|_| {
                     let mut gs = GraphState::new(&self.edges, &self.biases);
@@ -173,9 +184,16 @@ impl Lattice {
                         .unwrap();
                     let e = gs.get_energy();
                     (e, gs.get_state())
-                })
-                .collect();
-            Ok(res)
+                }).unzip();
+
+            let py_energies = Array::from(energies).into_pyarray(py).to_owned();
+            let flat_states = states.into_iter().flatten().collect();
+            let py_states = Array2::from_shape_vec((num_experiments, self.nvars), flat_states)
+                .unwrap()
+                .into_pyarray(py)
+                .to_owned();
+
+            Ok((py_energies, py_states))
         } else {
             Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
                 "Cannot run classic monte carlo with transverse field".to_string(),
@@ -192,11 +210,12 @@ impl Lattice {
     /// * `only_basic_moves`: disallow things other than simple spin flips.
     fn run_monte_carlo_annealing_and_get_energies(
         &self,
+        py: Python,
         mut betas: Vec<(usize, f64)>,
         timesteps: usize,
         num_experiments: usize,
         only_basic_moves: Option<bool>,
-    ) -> PyResult<Vec<(Vec<f64>, Vec<bool>)>> {
+    ) -> PyResult<(Py<PyArray2<f64>>, Py<PyArray2<bool>>)> {
         if self.transverse.is_none() {
             let only_basic_moves = only_basic_moves.unwrap_or(false);
             betas.sort_by_key(|(i, _)| *i);
@@ -215,7 +234,7 @@ impl Lattice {
                 betas.push((timesteps, v));
             }
 
-            let res = (0..num_experiments)
+            let (energies, states): (Vec<Vec<f64>>, Vec<Vec<bool>>) = (0..num_experiments)
                 .into_par_iter()
                 .map(|_| {
                     let mut gs = GraphState::new(&self.edges, &self.biases);
@@ -237,9 +256,20 @@ impl Lattice {
                         })
                         .collect();
                     (v, gs.get_state())
-                })
-                .collect();
-            Ok(res)
+                }).unzip();
+
+            let flat_energies = energies.into_iter().flatten().collect();
+            let py_energies = Array2::from_shape_vec((num_experiments, timesteps), flat_energies)
+                .unwrap()
+                .into_pyarray(py)
+                .to_owned();
+            let flat_states = states.into_iter().flatten().collect();
+            let py_states = Array2::from_shape_vec((num_experiments, self.nvars), flat_states)
+                .unwrap()
+                .into_pyarray(py)
+                .to_owned();
+
+            Ok((py_energies, py_states))
         } else {
             Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
                 "Cannot run classic monte carlo with transverse field".to_string(),
@@ -255,12 +285,13 @@ impl Lattice {
     /// * `num_experiments`: number of simultaneous experiments to run.
     fn run_quantum_monte_carlo(
         &self,
+        py: Python,
         beta: f64,
-        timesteps: u64,
+        timesteps: usize,
         num_experiments: usize,
         use_loop_update: Option<bool>,
         use_heatbath_diagonal_update: Option<bool>,
-    ) -> PyResult<Vec<(Vec<bool>, f64)>> {
+    ) -> PyResult<(Py<PyArray1<f64>>, Py<PyArray2<bool>>)> {
         if self.biases.iter().any(|b| *b != 0.0) {
             Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
                 "Cannot run quantum monte carlo with spin biases".to_string(),
@@ -275,7 +306,7 @@ impl Lattice {
                     let use_heatbath_diagonal_update =
                         use_heatbath_diagonal_update.unwrap_or(false);
                     let cutoff = self.nvars;
-                    let res = (0..num_experiments)
+                    let (states, energies): (Vec<Vec<bool>>, Vec<f64>) = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
                             let mut qmc_graph = new_qmc(
@@ -289,9 +320,16 @@ impl Lattice {
 
                             let average_energy = qmc_graph.timesteps(timesteps, beta);
                             (qmc_graph.into_vec(), average_energy)
-                        })
-                        .collect();
-                    Ok(res)
+                        }).unzip();
+
+                    let py_energies = Array::from(energies).into_pyarray(py).to_owned();
+                    let flat_states = states.into_iter().flatten().collect();
+                    let py_states = Array2::from_shape_vec((num_experiments, self.nvars), flat_states)
+                        .unwrap()
+                        .into_pyarray(py)
+                        .to_owned();
+
+                    Ok((py_energies, py_states))
                 }
             }
         }
@@ -308,14 +346,15 @@ impl Lattice {
     /// * `sampling_freq`: frequency of sampling in number of timesteps.
     fn run_quantum_monte_carlo_sampling(
         &self,
+        py: Python,
         beta: f64,
-        timesteps: u64,
+        timesteps: usize,
         num_experiments: usize,
-        sampling_wait_buffer: Option<u64>,
-        sampling_freq: Option<u64>,
+        sampling_wait_buffer: Option<usize>,
+        sampling_freq: Option<usize>,
         use_loop_update: Option<bool>,
         use_heatbath_diagonal_update: Option<bool>,
-    ) -> PyResult<Vec<(Vec<Vec<bool>>, f64)>> {
+    ) -> PyResult<(Py<PyArray1<f64>>, Py<PyArray3<bool>>)> {
         if self.biases.iter().any(|b| *b != 0.0) {
             Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
                 "Cannot run quantum monte carlo with spin biases".to_string(),
@@ -332,7 +371,7 @@ impl Lattice {
                     let sampling_wait_buffer =
                         sampling_wait_buffer.map(|wait| min(wait, timesteps));
                     let cutoff = self.nvars;
-                    let res = (0..num_experiments)
+                    let (states, energies): (Vec<Vec<Vec<bool>>>, Vec<f64>) = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
                             let mut qmc_graph = new_qmc(
@@ -351,9 +390,22 @@ impl Lattice {
                             };
 
                             qmc_graph.timesteps_sample(timesteps - wait, beta, sampling_freq)
-                        })
-                        .collect::<Vec<_>>();
-                    Ok(res)
+                        }).unzip();
+
+                    let wait = if let Some(wait) = sampling_wait_buffer {
+                        wait
+                    } else {
+                        0
+                    };
+
+                    let py_energies = Array::from(energies).into_pyarray(py).to_owned();
+                    let flat_states = states.into_iter().map(|v| v.into_iter().flatten().collect::<Vec<_>>()).flatten().collect();
+                    let py_states = Array3::from_shape_vec((num_experiments, timesteps - wait, self.nvars), flat_states)
+                        .unwrap()
+                        .into_pyarray(py)
+                        .to_owned();
+
+                    Ok((py_energies, py_states))
                 }
             }
         }
@@ -370,15 +422,16 @@ impl Lattice {
     /// * `sampling_freq`: frequency of sampling in number of timesteps.
     fn run_quantum_monte_carlo_and_measure_variable_autocorrelation(
         &self,
+        py: Python,
         beta: f64,
-        timesteps: u64,
+        timesteps: usize,
         num_experiments: usize,
-        sampling_wait_buffer: Option<u64>,
-        sampling_freq: Option<u64>,
+        sampling_wait_buffer: Option<usize>,
+        sampling_freq: Option<usize>,
         use_loop_update: Option<bool>,
         use_heatbath_diagonal_update: Option<bool>,
         use_fft: Option<bool>,
-    ) -> PyResult<Vec<Vec<f64>>> {
+    ) -> PyResult<Py<PyArray2<f64>>> {
         if self.biases.iter().any(|b| *b != 0.0) {
             Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
                 "Cannot run quantum monte carlo with spin biases".to_string(),
@@ -394,7 +447,7 @@ impl Lattice {
                         use_heatbath_diagonal_update.unwrap_or(false);
                     let sampling_wait_buffer = sampling_wait_buffer.unwrap_or(0);
                     let cutoff = self.nvars;
-                    let res = (0..num_experiments)
+                    let corrs = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
                             let mut qmc_graph = new_qmc(
@@ -418,7 +471,14 @@ impl Lattice {
                             )
                         })
                         .collect::<Vec<_>>();
-                    Ok(res)
+
+                    let flat_corrs = corrs.into_iter().flatten().collect();
+                    let py_corrs = Array2::from_shape_vec((num_experiments, timesteps), flat_corrs)
+                        .unwrap()
+                        .into_pyarray(py)
+                        .to_owned();
+
+                    Ok(py_corrs)
                 }
             }
         }
@@ -435,15 +495,16 @@ impl Lattice {
     /// * `sampling_freq`: frequency of sampling in number of timesteps.
     fn run_quantum_monte_carlo_and_measure_bond_autocorrelation(
         &self,
+        py: Python,
         beta: f64,
-        timesteps: u64,
+        timesteps: usize,
         num_experiments: usize,
-        sampling_wait_buffer: Option<u64>,
-        sampling_freq: Option<u64>,
+        sampling_wait_buffer: Option<usize>,
+        sampling_freq: Option<usize>,
         use_loop_update: Option<bool>,
         use_heatbath_diagonal_update: Option<bool>,
         use_fft: Option<bool>,
-    ) -> PyResult<Vec<Vec<f64>>> {
+    ) -> PyResult<Py<PyArray2<f64>>> {
         if self.biases.iter().any(|b| *b != 0.0) {
             Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
                 "Cannot run quantum monte carlo with spin biases".to_string(),
@@ -459,7 +520,7 @@ impl Lattice {
                         use_heatbath_diagonal_update.unwrap_or(false);
                     let sampling_wait_buffer = sampling_wait_buffer.unwrap_or(0);
                     let cutoff = self.nvars;
-                    let res = (0..num_experiments)
+                    let corrs = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
                             let mut qmc_graph = new_qmc(
@@ -483,7 +544,14 @@ impl Lattice {
                             )
                         })
                         .collect::<Vec<_>>();
-                    Ok(res)
+
+                    let flat_corrs = corrs.into_iter().flatten().collect();
+                    let py_corrs = Array2::from_shape_vec((num_experiments, timesteps), flat_corrs)
+                        .unwrap()
+                        .into_pyarray(py)
+                        .to_owned();
+
+                    Ok(py_corrs)
                 }
             }
         }
@@ -500,16 +568,17 @@ impl Lattice {
     /// * `exponent`: defaults to 1.
     fn run_quantum_monte_carlo_and_measure_spins(
         &self,
+        py: Python,
         beta: f64,
         timesteps: usize,
         num_experiments: usize,
-        sampling_freq: Option<u64>,
-        sampling_wait_buffer: Option<u64>,
+        sampling_freq: Option<usize>,
+        sampling_wait_buffer: Option<usize>,
         spin_measurement: Option<(f64, f64)>,
         use_loop_update: Option<bool>,
         use_heatbath_diagonal_update: Option<bool>,
         exponent: Option<i32>,
-    ) -> PyResult<Vec<(f64, f64)>> {
+    ) -> PyResult<(Py<PyArray1<f64>>, Py<PyArray1<f64>>)> {
         if self.biases.iter().any(|b| *b != 0.0) {
             Err(PyErr::new::<pyo3::exceptions::ValueError, String>(
                 "Cannot run quantum monte carlo with spin biases".to_string(),
@@ -526,7 +595,7 @@ impl Lattice {
                     let cutoff = self.nvars;
                     let (down_m, up_m) = spin_measurement.unwrap_or((-1.0, 1.0));
                     let exponent = exponent.unwrap_or(1);
-                    let res = (0..num_experiments)
+                    let (measures, energies): (Vec<f64>, Vec<f64>) = (0..num_experiments)
                         .into_par_iter()
                         .map(|_| {
                             let mut qmc_graph = new_qmc(
@@ -545,7 +614,7 @@ impl Lattice {
                                 0
                             };
                             let ((measure, steps), average_energy) = qmc_graph.timesteps_measure(
-                                timesteps as u64 - wait,
+                                timesteps - wait,
                                 beta,
                                 (0.0, 0),
                                 |(acc, step), state, _| {
@@ -562,9 +631,12 @@ impl Lattice {
                                 sampling_freq,
                             );
                             (measure / steps as f64, average_energy)
-                        })
-                        .collect();
-                    Ok(res)
+                        }).unzip();
+
+                    let py_measures = Array::from(measures).into_pyarray(py).to_owned();
+                    let py_energies = Array::from(energies).into_pyarray(py).to_owned();
+
+                    Ok((py_measures, py_energies))
                 }
             }
         }
@@ -574,5 +646,50 @@ impl Lattice {
 #[pymodule]
 fn py_monte_carlo(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<Lattice>()?;
+    //
+    // #[pyfn(m, "run_quantum_monte_carlo_sampling")]
+    // fn run_quantum_monte_carlo_sampling_numpy(
+    //     py: Python,
+    //     lattice: PyRef<Lattice>,
+    //     beta: f64,
+    //     timesteps: usize,
+    //     num_experiments: usize,
+    //     sampling_wait_buffer: Option<usize>,
+    //     sampling_freq: Option<usize>,
+    //     use_loop_update: Option<bool>,
+    //     use_heatbath_diagonal_update: Option<bool>,
+    // ) -> PyResult<(Py<PyArray3<bool>>, Py<PyArray1<f64>>)> {
+    //     let res = lattice.run_quantum_monte_carlo_sampling(
+    //         beta,
+    //         timesteps,
+    //         num_experiments,
+    //         sampling_wait_buffer,
+    //         sampling_freq,
+    //         use_loop_update,
+    //         use_heatbath_diagonal_update,
+    //     )?;
+    //
+    //     let timesteps = timesteps as usize;
+    //     let nvars = lattice.nvars;
+    //     let total = num_experiments * timesteps * nvars;
+    //     let mut bool_arr =
+    //         Array::from_shape_vec((num_experiments, timesteps, nvars), vec![false; total]).unwrap();
+    //     let mut f_arr = Array::zeros((num_experiments,));
+    //     res.into_iter()
+    //         .enumerate()
+    //         .for_each(|(exp, (timesteps, f))| {
+    //             timesteps.into_iter().enumerate().for_each(|(t, vars)| {
+    //                 vars.into_iter().enumerate().for_each(|(i, v)| {
+    //                     bool_arr[[exp, t, i]] = v;
+    //                 });
+    //             });
+    //             f_arr[exp] = f;
+    //         });
+    //
+    //     let bool_arr = bool_arr.into_pyarray(py).to_owned();
+    //     let f_arr = f_arr.into_pyarray(py).to_owned();
+    //     Ok((bool_arr, f_arr))
+    // }
+
     Ok(())
 }

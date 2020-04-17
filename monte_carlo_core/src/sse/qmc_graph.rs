@@ -120,7 +120,7 @@ impl<R: Rng> QMCGraph<R> {
         Self::new_with_rng(graph.edges, transverse, cutoff, use_loop_update, use_heatbath_diagonal_update, rng, graph.state)
     }
 
-    pub fn timesteps(&mut self, t: u64, beta: f64) -> f64 {
+    pub fn timesteps(&mut self, t: usize, beta: f64) -> f64 {
         let (_, average_energy) =
             self.timesteps_measure(t, beta, (), |_acc, _state, _weight| (), None);
         average_energy
@@ -128,11 +128,11 @@ impl<R: Rng> QMCGraph<R> {
 
     pub fn timesteps_sample(
         &mut self,
-        t: u64,
+        t: usize,
         beta: f64,
-        sampling_freq: Option<u64>,
+        sampling_freq: Option<usize>,
     ) -> (Vec<Vec<bool>>, f64) {
-        let acc = Vec::with_capacity((t / sampling_freq.unwrap_or(1) + 1) as usize);
+        let acc = Vec::with_capacity(t / sampling_freq.unwrap_or(1) + 1);
         self.timesteps_measure(
             t,
             beta,
@@ -147,11 +147,11 @@ impl<R: Rng> QMCGraph<R> {
 
     pub fn timesteps_measure<F, T>(
         &mut self,
-        timesteps: u64,
+        timesteps: usize,
         beta: f64,
         init_t: T,
         state_fold: F,
-        sampling_freq: Option<u64>,
+        sampling_freq: Option<usize>,
     ) -> (T, f64)
     where
         F: Fn(T, &[bool], f64) -> T,
@@ -261,9 +261,9 @@ impl<R: Rng> QMCGraph<R> {
 
     pub fn calculate_variable_autocorrelation(
         &mut self,
-        timesteps: u64,
+        timesteps: usize,
         beta: f64,
-        sampling_freq: Option<u64>,
+        sampling_freq: Option<usize>,
         use_fft: Option<bool>,
     ) -> Vec<f64> {
         self.calculate_autocorrelation(timesteps, beta, sampling_freq, use_fft, |sample| {
@@ -276,9 +276,9 @@ impl<R: Rng> QMCGraph<R> {
 
     pub fn calculate_bond_autocorrelation(
         &mut self,
-        timesteps: u64,
+        timesteps: usize,
         beta: f64,
-        sampling_freq: Option<u64>,
+        sampling_freq: Option<usize>,
         use_fft: Option<bool>,
     ) -> Vec<f64> {
         let edges = self.edges.clone();
@@ -300,16 +300,16 @@ impl<R: Rng> QMCGraph<R> {
 
     pub fn calculate_autocorrelation<F>(
         &mut self,
-        timesteps: u64,
+        timesteps: usize,
         beta: f64,
-        sampling_freq: Option<u64>,
+        sampling_freq: Option<usize>,
         use_fft: Option<bool>,
         sample_mapper: F,
     ) -> Vec<f64>
     where
         F: Fn(Vec<bool>) -> Vec<f64>,
     {
-        let acc = Vec::with_capacity((timesteps / sampling_freq.unwrap_or(1) + 1) as usize);
+        let acc = Vec::with_capacity(timesteps / sampling_freq.unwrap_or(1) + 1);
         let (samples, _) = self.timesteps_measure(
             timesteps,
             beta,
