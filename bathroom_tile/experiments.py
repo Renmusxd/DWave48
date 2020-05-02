@@ -1,6 +1,4 @@
-import graphbuilder
-import graphanalysis
-import graphdrawing
+from bathroom_tile import graphdrawing, graphbuilder, graphanalysis
 import numpy
 from matplotlib import pyplot
 import pickle
@@ -32,7 +30,7 @@ class ExperimentConfig:
 
         self.ej_over_kt = ej_over_kt
 
-    def build_graph(self, max_x=8, max_y=16, min_x=0, min_y=0, hs_override=None, build_kwargs=None):
+    def build_graph(self, max_x=8, max_y=16, min_x=0, min_y=0, hs_override=None, build_kwargs=None, calculate_traits=True, calculate_distances=True):
         gb = graphbuilder.GraphBuilder(j=self.j)
         gb.add_cells([
             (x, y)
@@ -42,7 +40,7 @@ class ExperimentConfig:
         gb.connect_all()
         kwargs_for_build = self.build_kwargs or {}
         kwargs_for_build.update(build_kwargs or {})
-        self.graph = gb.build(h=self.h, **kwargs_for_build)
+        self.graph = gb.build(h=self.h, **kwargs_for_build, calculate_traits=calculate_traits, calculate_distances=calculate_distances)
         self.hs = self.graph.hs
         if hs_override is not None:
             self.hs.update(hs_override)

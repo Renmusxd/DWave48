@@ -1,4 +1,4 @@
-from graphbuilder import energy_of_bonds, get_var_traits
+from bathroom_tile.graphbuilder import energy_of_bonds, get_var_traits
 
 
 class MockSampler:

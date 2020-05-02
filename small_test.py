@@ -1,11 +1,7 @@
-import tempfile
-import monte_carlo_simulator
+from bathroom_tile import monte_carlo_simulator
 import main
-import graphanalysis
-import graphdrawing
 from matplotlib import pyplot
 import os
-import numpy
 
 
 def monte_carlo_sampler_fn():

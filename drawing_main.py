@@ -1,5 +1,5 @@
 from matplotlib import pyplot
-from graphbuilder import get_var_cartesian
+from bathroom_tile.graphbuilder import get_var_cartesian
 
 if __name__ == "__main__":
     qubits = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,

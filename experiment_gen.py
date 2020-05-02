@@ -1,8 +1,5 @@
-from experiments import *
-from dwave.system.samplers import DWaveSampler
-import monte_carlo_simulator
-import quantum_monte_carlo_simulator
-import mocksampler
+from bathroom_tile.experiments import *
+from bathroom_tile import quantum_monte_carlo_simulator
 import os
 import numpy
 

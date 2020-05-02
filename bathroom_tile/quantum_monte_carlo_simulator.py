@@ -1,4 +1,4 @@
-import graphbuilder
+from bathroom_tile import graphbuilder
 import py_monte_carlo
 import numpy
 import collections

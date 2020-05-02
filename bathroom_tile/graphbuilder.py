@@ -44,7 +44,7 @@ class GraphBuilder:
             raise Exception("Attempting to superimpose boundary and cell: {}".format(loc))
         self.periodic_boundaries.add((loc, adj))
 
-    def build(self, h=0, ideal_periodic_boundaries=False):
+    def build(self, h=0, ideal_periodic_boundaries=False, calculate_traits=True, calculate_distances=True):
         connections = {}
         for x, y, front in self.unit_cells:
             if is_type_a(x, y):
@@ -146,7 +146,8 @@ class GraphBuilder:
         #     for (va, vb), j in clone_edges.items():
         #         raise NotImplementedError("Have not implemented periodic boundary conditions with transverse field.")
 
-        return Graph(connections, hs)
+        return Graph(connections, hs, calculate_distances=calculate_distances,
+                     calculate_traits=calculate_traits, periodic_boundaries=ideal_periodic_boundaries)
 
     def add_cells(self, cells, fronts=None):
         if fronts is None:
@@ -180,7 +181,8 @@ class GraphBuilder:
 class Graph:
     """Aspects of the graph which do not rely on data"""
 
-    def __init__(self, edges, hs, graph_cache_dir='graphcache', vars_per_cell=8, unit_cells_per_row=16):
+    def __init__(self, edges, hs, graph_cache_dir='graphcache', vars_per_cell=8, unit_cells_per_row=16,
+                 calculate_traits=True, periodic_boundaries=False, calculate_distances=True):
         self.edges = edges
         self.hs = hs
         self.vars_per_cell = vars_per_cell
@@ -189,20 +191,23 @@ class Graph:
         self.sorted_edges = list(sorted(edges))
         self.edge_lookup = {edge: i for i, edge in enumerate(self.sorted_edges)}
         self.all_vars = list(sorted(set(v for edge in self.edges for v in edge)))
+        self.periodic_boundaries = periodic_boundaries
 
-        if not self.load_if_needed():
+        if not self.load_if_needed() and calculate_traits:
             print("\tCalculating graph features")
             # Order matters
             self.unit_cells, self.unit_cell_bounding_box = self.calculate_unit_cells()
-            self.vertex_distances, self.distance_lookup = variable_distances(self.sorted_edges)
-            self.vertex_euclidean_distances = self.calculate_euclidean_distances(self.distance_lookup)
-            self.dimer_distance_mat, self.all_dimer_pairs = self.calculate_dimer_distances()
-            self.dimer_euclidean_distances = self.calculate_euclidean_dimer_distances()
+            self.used_unit_cells_per_row = max(max(a, b) for (a, b, _) in self.unit_cells) + 1
             self.dimer_vertex_list = self.calculate_dimer_vertex_list()
             self.edge_to_vertex_matrix = self.calculate_edge_to_vertex_matrix()
-            self.dimer_vertex_distances = self.calculate_dimer_vertex_euclidean_distance()
+            if calculate_distances:
+                self.vertex_distances, self.distance_lookup = variable_distances(self.sorted_edges)
+                self.vertex_euclidean_distances = self.calculate_euclidean_distances(self.distance_lookup)
+                self.dimer_distance_mat, self.all_dimer_pairs = self.calculate_dimer_distances()
+                self.dimer_euclidean_distances = self.calculate_euclidean_dimer_distances()
+                self.dimer_vertex_distances = self.calculate_dimer_vertex_euclidean_distance()
             self.save()
-        else:
+        elif calculate_traits:
             print("\tLoaded graph features")
 
     def __hash__(self):
@@ -232,6 +237,7 @@ class Graph:
             self.edge_lookup = config.edge_lookup
             self.all_vars = config.all_vars
             self.unit_cells = config.unit_cells
+            self.used_unit_cells_per_row = config.used_unit_cells_per_row
             self.unit_cell_bounding_box = config.unit_cell_bounding_box
             self.vertex_distances = config.vertex_distances
             self.distance_lookup = config.distance_lookup
@@ -265,7 +271,9 @@ class Graph:
         vertices_to_edges = collections.defaultdict(list)
         for va, vb in self.edge_lookup:
             vertex_a, vertex_b = get_dimer_vertices_for_edge(va, vb, vars_per_cell=self.vars_per_cell,
-                                                             unit_cells_per_row=self.unit_cells_per_row)
+                                                             unit_cells_per_row=self.unit_cells_per_row,
+                                                             used_unit_cells_per_row=self.used_unit_cells_per_row,
+                                                             periodic_boundaries=self.periodic_boundaries)
             vertices_to_edges[vertex_a].append(edge_lookup[(va, vb)])
             vertices_to_edges[vertex_b].append(edge_lookup[(va, vb)])
         dimer_pairs = set()
@@ -313,13 +321,21 @@ class Graph:
         unit_cells = set(self.unit_cells)
         # Then all the squares of unit cells
         unit_cycles = set()
+
         for (cx, cy, front) in unit_cells:
+            def f(u):
+                if self.periodic_boundaries:
+                    # TODO make x and y different
+                    return u % self.used_unit_cells_per_row
+                else:
+                    return u
+
             # Add the bottom-right one for each cell
             sides = [
                 (cx, cy, front),
-                (cx + 1, cy, front),
-                (cx + 1, cy + 1, front),
-                (cx, cy + 1, front)
+                (f(cx + 1), cy, front),
+                (f(cx + 1), f(cy + 1), front),
+                (cx, f(cy + 1), front)
             ]
             if all(side in unit_cells for side in sides[1:]):
                 unit_cycles.add(tuple(sorted(tuple(sides))))
@@ -332,10 +348,11 @@ class Graph:
         dimer_vertex_list = self.dimer_vertex_list
         dimer_vertex_lookup = {k: i for i, k in enumerate(dimer_vertex_list)}
         edge_to_vertex_matrix = numpy.zeros((len(self.edges), len(dimer_vertex_list)), dtype=numpy.int8)
-        for (va, vb) in self.sorted_edges:
+        for i,(va, vb) in enumerate(self.sorted_edges):
             v1, v2 = get_dimer_vertices_for_edge(va, vb, vars_per_cell=self.vars_per_cell,
-                                                 unit_cells_per_row=self.unit_cells_per_row)
-            i = self.edge_lookup[(va, vb)]
+                                                 unit_cells_per_row=self.unit_cells_per_row,
+                                                 used_unit_cells_per_row=self.used_unit_cells_per_row,
+                                                 periodic_boundaries=self.periodic_boundaries)
             if v1 in dimer_vertex_lookup:
                 edge_to_vertex_matrix[i, dimer_vertex_lookup[v1]] = 1
             if v2 in dimer_vertex_lookup:
@@ -444,11 +461,30 @@ def get_var_cartesian(index, vars_per_cell=8, unit_cells_per_row=16, inner_edge_
     return cx + dx, cy + dy
 
 
-def get_dimer_vertices_for_edge(vara, varb, vars_per_cell=8, unit_cells_per_row=16):
+def get_variable_for_cell_dir(unit_x, unit_y, dx, dy, vars_per_cell=8, unit_cells_per_row=16, front=True):
+    if not is_type_a(unit_x, unit_y):
+        dx = -dx
+        dy = -dy
+
+    unit_cell_index = unit_y * unit_cells_per_row + unit_x
+    rel_var = get_connection_cells()[(dx, dy, front)]
+
+    return unit_cell_index*vars_per_cell + rel_var
+
+
+def get_dimer_vertices_for_edge(vara, varb, vars_per_cell=8, unit_cells_per_row=16, used_unit_cells_per_row=16, periodic_boundaries=False):
     """Returns the two dimer vertices attached by this dimer."""
     acx, acy, rela = get_var_traits(vara, vars_per_cell=vars_per_cell, unit_cells_per_row=unit_cells_per_row)
     bcx, bcy, relb = get_var_traits(varb, vars_per_cell=vars_per_cell, unit_cells_per_row=unit_cells_per_row)
     front = is_front(vara)
+
+    def f(u):
+        if periodic_boundaries:
+            # TODO make x and y different
+            return u % used_unit_cells_per_row
+        else:
+            return u
+
     if not front:
         raise NotImplemented("Not implemented on rear.")
     if acx == bcx and acy == bcy:
@@ -459,9 +495,9 @@ def get_dimer_vertices_for_edge(vara, varb, vars_per_cell=8, unit_cells_per_row=
                                                 unit_cells_per_row=unit_cells_per_row)
         unit_cycle = tuple(sorted([
             (cx, cy, front),
-            (cx + adx, cy + ady, front),
-            (cx + bdx, cy + bdy, front),
-            (cx + adx + bdx, cy + ady + bdy, front)
+            (f(cx + adx), f(cy + ady), front),
+            (f(cx + bdx), f(cy + bdy), front),
+            (f(cx + adx + bdx), f(cy + ady + bdy), front)
         ]))
         return (cx, cy, front), unit_cycle
     else:
@@ -472,14 +508,14 @@ def get_dimer_vertices_for_edge(vara, varb, vars_per_cell=8, unit_cells_per_row=
         unit_cycle_a = tuple(sorted([
             (acx, acy, front),
             (bcx, bcy, front),
-            (acx + dy, acy + dx, front),
-            (bcx + dy, bcy + dx, front),
+            (f(acx + dy), f(acy + dx), front),
+            (f(bcx + dy), f(bcy + dx), front),
         ]))
         unit_cycle_b = tuple(sorted([
             (acx, acy, front),
             (bcx, bcy, front),
-            (acx - dy, acy - dx, front),
-            (bcx - dy, bcy - dx, front),
+            (f(acx - dy), f(acy - dx), front),
+            (f(bcx - dy), f(bcy - dx), front),
         ]))
         return unit_cycle_a, unit_cycle_b
 

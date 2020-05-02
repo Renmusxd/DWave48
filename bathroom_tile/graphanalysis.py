@@ -1,11 +1,11 @@
 import numpy
-import graphbuilder
+from bathroom_tile import graphbuilder
 
 
 class GraphAnalyzer:
     """Things about the graph using data from the samples."""
 
-    def __init__(self, graph, samples, energies, num_occurrences):
+    def __init__(self, graph, samples, energies, num_occurrences, flat_samples=None):
         self.graph = graph
         self.samples = samples
         self.energies = energies
@@ -14,6 +14,9 @@ class GraphAnalyzer:
         # From get_flat_samples
         self.var_map = None
         self.var_mat = None
+        if flat_samples is not None:
+            self.var_map = flat_samples[0]
+            self.var_mat = flat_samples[1]
 
         # from get_correlation_matrix
         self.variable_correlations = None
@@ -227,6 +230,7 @@ class GraphAnalyzer:
             diagonal_mask = self.get_diagonal_dimer_mask()
             diagonal_distances = self.graph.dimer_distance_mat[numpy.ix_(diagonal_mask, diagonal_mask)]
             distance_corrs, distance_stdv = average_by_distance(diagonal_distances, dimer_corr)
+            distance_corrs, distance_stdv = average_by_distance(diagonal_distances, dimer_corr)
             self.diagonal_dimer_distance_correlations = distance_corrs
             self.diagonal_dimer_distance_stdv = distance_stdv
         return dimer_corr, self.diagonal_dimer_distance_correlations, self.diagonal_dimer_distance_stdv, self.graph.all_dimer_pairs
@@ -371,7 +375,6 @@ class GraphAnalyzer:
         return defect_corr, self.defect_euclidean_distance_correlations, self.defect_euclidean_distance_stdv, self.graph.dimer_vertex_list
 
     def get_heightmaps(self):
-
         # To assign a height to each vertex, make the path through the vertices, passing through each edge.
         # treat the vertices connecting unit cells as a single vertex, since in the perfect dimer ground states they
         # should not have broken bonds.

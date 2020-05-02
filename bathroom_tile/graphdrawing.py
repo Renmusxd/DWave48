@@ -1,7 +1,6 @@
 import io
 import numpy
-import graphanalysis
-import graphbuilder
+from bathroom_tile import graphbuilder, graphanalysis
 import collections
 import sys
 

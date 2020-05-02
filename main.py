@@ -1,7 +1,7 @@
 from experiment_gen import experiment_generator
 import pickle
 import collections
-from experiment_metaanalysis import *
+from bathroom_tile.experiment_metaanalysis import *
 from matplotlib import pyplot
 import os
 

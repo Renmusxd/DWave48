@@ -1,5 +1,5 @@
 from experiment_gen import experiment_generator
-from experiment_metaanalysis import *
+from bathroom_tile.experiment_metaanalysis import *
 import argparse
 import os
 import pickle
