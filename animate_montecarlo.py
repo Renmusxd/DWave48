@@ -73,7 +73,7 @@ if __name__ == "__main__":
 
     lattice.set_initial_state([top_right_staggered(v) for v in variables])
 
-    timesteps = 10000
+    timesteps = 100
     energies, states = lattice.run_monte_carlo_sampling(3.0, timesteps, 1)
     energies = energies[0]
     states = states[0]
