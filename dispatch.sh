@@ -12,6 +12,7 @@ else
 	mkdir -p "$BASE_DIR"
 	mkdir -p "$BASE_DIR/code"
 	cp *.py "$BASE_DIR/code"
+	cp -r "bathroom_tile" "$BASE_DIR/code"
 	cp *.sh "$BASE_DIR/code"
 	# Speeds things up sometimes
 	cp -r graphcache "$BASE_DIR/code"

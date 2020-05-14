@@ -13,6 +13,7 @@ if __name__ == "__main__":
     parser.add_argument('--base_dir', type=str, default='/tmp/experiment')
     parser.add_argument('--analyze', action='store_true', default=False)
     parser.add_argument('--only_produce_configs', action='store_true', default=False)
+    parser.add_argument('--only_build_graphs', action='store_true', default=False)
 
     parsed_args = parser.parse_args()
 

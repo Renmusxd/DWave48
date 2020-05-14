@@ -221,9 +221,12 @@ class Graph:
     def load_if_needed(self):
         filename = os.path.join(self.graph_cache, '{}.pickle'.format(hash(self)))
         if os.path.exists(filename):
-            with open(filename, 'rb') as f:
-                config = pickle.load(f)
-            return self.overwrite_with(config)
+            try:
+                with open(filename, 'rb') as f:
+                    config = pickle.load(f)
+                return self.overwrite_with(config)
+            except IOError as e:
+                print("Error reading graph: {}".format(e))
         return False
 
     def overwrite_with(self, config):
