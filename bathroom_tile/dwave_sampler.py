@@ -1,5 +1,6 @@
 from dwave.system import samplers
 import scipy.interpolate
+import numpy
 
 
 class MachineTransverseFieldHelper:
@@ -71,7 +72,34 @@ class DWaveSampler:
             schedule = [(0, 0.0),
                         (t, s), (t+self.hold_time, s),
                         (t+self.hold_time+t_quench, 1.0)]
+        else:
+            s = 1.0
 
         machine_sampler = samplers.DWaveSampler()
-        return machine_sampler.sample_ising(hs, edges, num_reads=num_reads, auto_scale=auto_scale,
-                                            anneal_schedule=schedule)
+        dwave_samples = machine_sampler.sample_ising(hs, edges, num_reads=num_reads, auto_scale=auto_scale,
+                                                     anneal_schedule=schedule)
+        all_vars = list(sorted(set([v for edge in edges for v in [edge[0],edge[1]]])))
+        return DWaveResponse(dwave_samples, all_vars, s=s, j=self.field_helper.j_for_s(s), gamma=transverse_field)
+
+
+class DWaveResponse:
+    def __init__(self, data, all_vars, s, j, gamma):
+        self.energies = [energy for _, energy, num_occ in data.data() for _ in range(num_occ)]
+        data = [[sample[k] for k in all_vars] for sample, _, num_occ in data.data() for _ in range(num_occ)]
+        self.my_data = numpy.asarray(data).T
+        self.s = s
+        self.j = j
+        self.gamma = gamma
+        self.all_vars = all_vars
+
+    def var_map(self):
+        return self.all_vars
+
+    def data(self):
+        return self.my_data
+
+    def energy(self):
+        return self.energies
+
+    def scalars(self):
+        return {"actual_j": self.j, "s": self.s}

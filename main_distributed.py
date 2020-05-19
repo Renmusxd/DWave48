@@ -60,7 +60,7 @@ if __name__ == "__main__":
                 pyplot.savefig(os.path.join(base_directory, "{}.svg".format(k)))
                 pyplot.clf()
 
-            plot_functions = [defect_plot, flippable_plot, unit_cell_divergence_plot]
+            plot_functions = [defect_plot, flippable_plot, unit_cell_divergence_plot, flippable_phase]
             for plot_fn in plot_functions:
                 try:
                     plot_fn(base_directory, scalars)

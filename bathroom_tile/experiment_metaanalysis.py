@@ -1,5 +1,8 @@
 from matplotlib import pyplot
+import scipy.interpolate
+import numpy
 import os
+
 
 def defect_plot(base_dir, scalars):
     inv_j = scalars['inv_j']
@@ -52,6 +55,27 @@ def flippable_plot(base_dir, scalars):
     pyplot.savefig(os.path.join(base_dir, 'flippable_vs_hs.svg'))
     pyplot.clf()
 
+
+def flippable_phase(base_dir, scalars):
+    if 'actual_j' in scalars:
+        # This name is weird, its actually the multiplier for j
+        ratio = scalars['actual_j']
+        ej_over_kt = numpy.asarray(scalars['ej_by_kt']) * ratio
+    else:
+        ej_over_kt = scalars['ej_by_kt']
+    gamma = scalars['gamma']
+    flippable_count = scalars['flippable_count']
+
+    kt_over_ej = [1./jk for jk in ej_over_kt]
+
+    # Make a grid
+    mgrid_x, mgrid_y = numpy.meshgrid(numpy.linspace(min(gamma), max(gamma), 1000),
+                                      numpy.linspace(min(kt_over_ej), max(kt_over_ej), 1000))
+    mgrid_z = scipy.interpolate.griddata((gamma, kt_over_ej), flippable_count, (mgrid_x, mgrid_y), method='cubic')
+
+    pyplot.contourf(mgrid_x, mgrid_y, mgrid_z)
+    pyplot.savefig(os.path.join(base_dir, 'flippable_phase.svg'))
+    pyplot.clf()
 
 def unit_cell_divergence_plot(base_dir, scalars):
     inv_j = scalars['inv_j']

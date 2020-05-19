@@ -7,6 +7,7 @@ from bathroom_tile.graphbuilder import get_var_cartesian, get_dimer_vertices_for
 import scipy.spatial
 import scipy.sparse
 import numpy
+import sys
 
 
 def get_dimer_site_cartesian(dimer_site):
@@ -163,7 +164,7 @@ def main(experiments=8, thermalization=0, timesteps=10000, n=16, beta=3.0):
     lattice_edges = [((variable_lookup[a], variable_lookup[b]), j) for (a, b), j in edges.items()]
     lattice = py_monte_carlo.Lattice(lattice_edges)
 
-    lattice.set_initial_state([top_right_staggered(v) for v in variables])
+    lattice.set_initial_state([columnar(v) for v in variables])
 
     print("Running Monte Carlo")
     energies, states = lattice.run_monte_carlo_sampling(beta, timesteps, experiments,
@@ -224,12 +225,14 @@ def main(experiments=8, thermalization=0, timesteps=10000, n=16, beta=3.0):
 
     pyplot.hist(dists, density=True)
     pyplot.hist(all_distances, histtype='step', density=True)
+    if len(sys.argv) > 1:
+        pyplot.savefig(sys.argv[1])
     pyplot.show()
 
 
 if __name__ == "__main__":
-    experiments = 8
-    timesteps = 10000
+    experiments = 1
+    timesteps = 100000
     n = 16
-    main(experiments=experiments, timesteps=timesteps, n=n, beta=3.0)
+    main(experiments=experiments, timesteps=timesteps, n=n, beta=2.0)
 

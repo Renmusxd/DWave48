@@ -3,12 +3,11 @@ import collections
 
 
 class MonteCarloSampler:
-    def __init__(self, beta=39.72, timesteps=1e6, annealed=True, only_single_spin_flips=False, read_all_energies=False):
+    def __init__(self, beta=39.72, timesteps=1e6, annealed=True, only_single_spin_flips=False):
         self.beta = beta
         self.timesteps = timesteps
         self.annealed = annealed
         self.basic_moves = only_single_spin_flips
-        self.read_all_energies = read_all_energies
 
     def sample_ising(self, hs, edges, num_reads=1, auto_scale=True):
         all_vars = list(sorted(set(v for (va, vb) in edges for v in [va, vb])))
@@ -37,37 +36,26 @@ class MonteCarloSampler:
             lattice.set_bias(i, h)
 
         # TODO: verify the changes here since switching to numpy code
-        if self.read_all_energies:
-            all_energies, ss = lattice.run_monte_carlo_annealing_and_get_energies(annealing, t, num_reads, only_basic_moves=self.basic_moves)
-            readout = ((energies[-1], s) for energies, s in zip(all_energies, ss))
-        elif self.annealed:
+        if self.annealed:
             es, ss = lattice.run_monte_carlo_annealing(annealing, t, num_reads, only_basic_moves=self.basic_moves)
-            readout = zip(es, ss)
         else:
             es, ss = lattice.run_monte_carlo(self.beta, t, num_reads, only_basic_moves=self.basic_moves)
-            readout = zip(es, ss)
-        readout = [(energy, tuple(s)) for energy, s in readout]
-        num_occurences = collections.defaultdict(lambda: 0)
-        for energy, s in readout:
-            num_occurences[s] += 1
 
-        def f(v):
-            if v:
-                return 1
-            else:
-                return -1
+        ss = ss*2 - 1
 
-        readout = [({all_vars[i]: f(v) for i, v in enumerate(s)}, energy, num_occurences[s]) for energy, s in readout]
-        return MonteCarloResponse(readout, all_energies=all_energies)
+        return MonteCarloResponse(ss, es)
 
 
 class MonteCarloResponse:
-    def __init__(self, data, all_energies=None):
-        self.my_data = data
-        self.all_energies = all_energies
+    def __init__(self, data, energies):
+        self.my_data = data.T
+        self.energies = energies
 
     def data(self):
         return self.my_data
 
-    def trace_energies(self):
-        return self.all_energies
+    def energy(self):
+        return self.energies
+
+    def scalars(self):
+        return {}

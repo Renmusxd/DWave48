@@ -23,7 +23,7 @@ class QuantumMonteCarloSampler:
             max_e = max(transverse_field, max_j)
             min_e = min(transverse_field, min_j)
             max_abs_e = max(abs(max_e), abs(min_e))
-        original_edges = edges
+
         edges = [((all_vars_lookup[va], all_vars_lookup[vb]), j / max_abs_e) for (va, vb), j in edges.items()]
         transverse_field = transverse_field / max_abs_e
 
@@ -45,31 +45,25 @@ class QuantumMonteCarloSampler:
 
         # Flatten except variables
         states = states.reshape((-1, states.shape[-1]))
-
+        states = states * 2 - 1
         average_energy = numpy.mean(energies)
+        edges_dict = dict(edges)
+        energies = [graphbuilder.energy_of_bonds(edges_dict, sample) for sample in states]
 
-        num_occurences = collections.defaultdict(lambda: 0)
-        for s in states:
-            num_occurences[tuple(s)] += 1
-
-        def f(v):
-            if v:
-                return 1
-            else:
-                return -1
-
-        states = [({all_vars[i]: f(v) for i, v in enumerate(s)}, tuple(s)) for s in states]
-        readout = [(s, graphbuilder.energy_of_bonds(original_edges, s), num_occurences[ts]) for s, ts in states]
-        return QuantumMonteCarloResponse(readout, average_actual_energy=average_energy)
+        return QuantumMonteCarloResponse(states, energies, average_actual_energy=average_energy)
 
 
 class QuantumMonteCarloResponse:
-    def __init__(self, data, average_actual_energy=None):
-        self.my_data = data
+    def __init__(self, data, energies, average_actual_energy=None):
+        self.my_data = data.T
+        self.energies = energies
         self.average_actual_energy = average_actual_energy
 
     def data(self):
         return self.my_data
+
+    def energy(self):
+        return self.energies
 
     def average_energy(self):
         return self.average_actual_energy

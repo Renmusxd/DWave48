@@ -7,22 +7,24 @@ import numpy
 
 def experiment_generator(base_dir):
     n = 10
-    # betas = 10**numpy.linspace(-2, 0, n)
     beta = 39.72
     h = 0.0
-    j = 1.0
     gammas = numpy.linspace(0.01, 0.5, n)
-    mapper = dwave_sampler.MachineTransverseFieldHelper()
-    for i, gamma in enumerate(gammas):
-        tmp_s = mapper.s_for_gamma(gamma)
-        tmp_j = j*mapper.j_for_s(tmp_s)
+    js = numpy.linspace(0.9,1.0,n)
+    JS, GS = numpy.meshgrid(js, gammas)
+    samples_to_take = list(zip(JS.flatten(), GS.flatten()))
+
+    # mapper = dwave_sampler.MachineTransverseFieldHelper()
+    for i, (j, gamma) in enumerate(samples_to_take):
+        # tmp_s = mapper.s_for_gamma(gamma)
+        # tmp_j = j*mapper.j_for_s(tmp_s)
         print("Building experiment {}".format(i))
         experiment_dir = os.path.join(base_dir, "experiment_{}".format(i))
         print("\tUsing directory: {}".format(experiment_dir))
         config = ExperimentConfig(experiment_dir,
                                   quantum_monte_carlo_simulator.QuantumMonteCarloSampler,
-                                  h=h, j=tmp_j, gamma=gamma, throw_errors=True,
-                                  ej_over_kt=beta,
+                                  h=h, j=j, gamma=gamma, throw_errors=True,
+                                  ej_over_kt=j*beta,
                                   sampler_kwargs={'beta': beta,
                                                   'thermalization_time': 1e4,
                                                   'timesteps': 1e7 + 1e4,

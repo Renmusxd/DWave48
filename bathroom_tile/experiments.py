@@ -17,7 +17,6 @@ class ExperimentConfig:
         self.num_reads = 0
         self.auto_scale = True
         self.response = None
-        self.data = None
         self.h = h
         self.j = j
         self.gamma = gamma
@@ -76,7 +75,6 @@ class ExperimentConfig:
         self.auto_scale = config.auto_scale
         self.base_dir = config.base_dir
         self.response = config.response
-        self.data = config.data
         self.graph = config.graph
 
     def run_or_load_experiment(self, sample_kwargs=None, sampler_kwargs=None):
@@ -95,8 +93,6 @@ class ExperimentConfig:
                                                                                num_reads=self.num_reads,
                                                                                auto_scale=self.auto_scale,
                                                                                **kwargs_for_sample)
-            self.data = [({k: sample[k] for k in sample}, energy, num_occurences)
-                         for sample, energy, num_occurences in self.response.data()]
             print("done!")
             self.save_self(filepath)
 
@@ -133,12 +129,11 @@ class ExperimentConfig:
         if hasattr(self.response, 'scalars'):
             result_dict.update(self.response.scalars())
 
-        if self.data:
-            samples = [sample for sample, _, __ in self.data]
-            energies = [energy for _, energy, __ in self.data]
-            num_occurrences = [num_occurrences for _, __, num_occurrences in self.data]
+        if self.response:
+            var_map = self.graph.all_vars
+            var_mat = self.response.data()
 
-            graph_analyzer = graphanalysis.GraphAnalyzer(self.graph, samples, energies, num_occurrences)
+            graph_analyzer = graphanalysis.GraphAnalyzer(self.graph, var_map, var_mat, self.response.energy())
             for analyzer_fn in self.analyzers:
                 try:
                     output = analyzer_fn(self.base_dir, graph_analyzer)
@@ -168,25 +163,24 @@ class ExperimentConfig:
         @analyzer
         def analyzer_plot_energies(base_dir, graph_analyzer):
             print("\tMaking energy histogram")
-            pyplot.hist(graph_analyzer.energies, weights=graph_analyzer.num_occurrences)
+            pyplot.hist(graph_analyzer.energies)
             pyplot.savefig(os.path.join(base_dir, "energies.svg"))
-            pyplot.clf()
+            pyplot.close()
 
         @analyzer
         def analyzer_count_dimers(base_dir, graph_analyzer):
             print("\tCalculating dimers")
             dimers = graph_analyzer.get_dimer_matrix()
             dimers_per_sample = numpy.sum(dimers == 1, axis=0)
-            pyplot.hist(dimers_per_sample, weights=graph_analyzer.num_occurrences)
+            pyplot.hist(dimers_per_sample)
             pyplot.savefig(os.path.join(base_dir, "dimer_counts.svg"))
-            pyplot.clf()
+            pyplot.close()
 
         @analyzer
         def analyzer_draw_dimers(base_dir, graph_analyzer):
             # Then plot the dimers for one of the ground states (or lowest E we found anyway).
             print("\tDrawing dimer svgs")
-            lowest_e = numpy.argmin(graph_analyzer.energies)
-            sample, energy, num_occurrences = self.data[lowest_e]
+            sample = graph_analyzer.lowest_e_sample
 
             draw_dimers(os.path.join(base_dir, "front_min_energy_dimers.svg"), graph_analyzer.graph.edges, sample,
                         front=True, color_on_orientation=False)
@@ -206,7 +200,7 @@ class ExperimentConfig:
             pyplot.imshow(var_corr, interpolation='nearest')
             pyplot.colorbar()
             pyplot.savefig(os.path.join(base_dir, "variable_correlations.svg"))
-            pyplot.clf()
+            pyplot.close()
 
         @analyzer
         def analyzer_calculate_variable_distance_correlations(base_dir, graph_analyzer):
@@ -223,7 +217,7 @@ class ExperimentConfig:
             pyplot.xlabel("Distance (in # edges)")
             pyplot.ylabel("Correlation")
             pyplot.savefig(os.path.join(base_dir, "correlation_distance.svg"))
-            pyplot.clf()
+            pyplot.close()
 
         @analyzer
         def analyzer_calculate_variable_euclidean_distance_correlations(base_dir, graph_analyzer):
@@ -238,7 +232,7 @@ class ExperimentConfig:
             pyplot.xlabel("Distance (with edge length=1.0)")
             pyplot.ylabel("Correlation")
             pyplot.savefig(os.path.join(base_dir, "correlation_euclidean_distance.svg"))
-            pyplot.clf()
+            pyplot.close()
 
         @analyzer
         def analyzer_calculate_dimer_correlations(base_dir, graph_analyzer):
@@ -248,7 +242,7 @@ class ExperimentConfig:
             pyplot.imshow(dimer_corrs, interpolation='nearest')
             pyplot.colorbar()
             pyplot.savefig(os.path.join(base_dir, "dimer_correlations.svg"))
-            pyplot.clf()
+            pyplot.close()
 
         @analyzer
         def analyzer_calculate_dimer_distance_correlations(base_dir, graph_analyzer):
@@ -265,7 +259,7 @@ class ExperimentConfig:
             pyplot.xlabel("Dimer distance (in # edges in dimer-dual)")
             pyplot.ylabel("Correlation")
             pyplot.savefig(os.path.join(base_dir, "dimer_correlation_distance.svg"))
-            pyplot.clf()
+            pyplot.close()
 
         @analyzer
         def analyzer_calculate_dimer_euclidean_distance_correlations(base_dir, graph_analyzer):
@@ -281,7 +275,7 @@ class ExperimentConfig:
             pyplot.xlabel("Dimer distance (with edge length=1.0)")
             pyplot.ylabel("Correlation")
             pyplot.savefig(os.path.join(base_dir, "dimer_correlation_euclidean_distance.svg"))
-            pyplot.clf()
+            pyplot.close()
 
         @analyzer
         def analyzer_calculate_diagonal_dimer_correlations(base_dir, graph_analyzer):
@@ -291,7 +285,7 @@ class ExperimentConfig:
             pyplot.imshow(dimer_corrs, interpolation='nearest')
             pyplot.colorbar()
             pyplot.savefig(os.path.join(base_dir, "diagonal_dimer_correlations.svg"))
-            pyplot.clf()
+            pyplot.close()
 
         @analyzer
         def analyzer_calculate_diagonal_dimer_distance_correlations(base_dir, graph_analyzer):
@@ -308,7 +302,7 @@ class ExperimentConfig:
             pyplot.xlabel("Dimer distance (in # edges in dimer-dual)")
             pyplot.ylabel("Correlation")
             pyplot.savefig(os.path.join(base_dir, "diagonal_dimer_correlation_distance.svg"))
-            pyplot.clf()
+            pyplot.close()
 
         @analyzer
         def analyzer_calculate_diagonal_dimer_euclidean_distance_correlations(base_dir, graph_analyzer):
@@ -324,7 +318,7 @@ class ExperimentConfig:
             pyplot.xlabel("Dimer distance (with edge length=1.0)")
             pyplot.ylabel("Correlation")
             pyplot.savefig(os.path.join(base_dir, "diagonal_dimer_correlation_euclidean_distance.svg"))
-            pyplot.clf()
+            pyplot.close()
 
         @analyzer
         def analyzer_calculate_oriented_dimer_correlations(base_dir, graph_analyzer):
@@ -343,7 +337,7 @@ class ExperimentConfig:
                 ax.set_xlabel("Dimer distance (with edge length=1.0)")
                 ax.set_ylabel("Correlation")
             pyplot.savefig(os.path.join(base_dir, "oriented_euclidean_correlations.svg"))
-            pyplot.clf()
+            pyplot.close()
 
         @analyzer
         def analyzer_calculate_average_dimer_occupations(base_dir, graph_analyzer):
@@ -365,13 +359,13 @@ class ExperimentConfig:
             pyplot.plot(xs, average_dimers + stdv_dimers, 'r--')
             pyplot.plot(xs, average_dimers - stdv_dimers, 'r--')
             pyplot.savefig(os.path.join(base_dir, "dimer_occupation_plot.svg"))
-            pyplot.clf()
+            pyplot.close()
 
             pyplot.hist(average_dimers)
             pyplot.xlabel("Dimer occupation frequencies")
             pyplot.ylabel("Counts")
             pyplot.savefig(os.path.join(base_dir, "dimer_occupation_hist.svg"))
-            pyplot.clf()
+            pyplot.close()
 
             return {"divergence": divergence}
 
@@ -379,8 +373,7 @@ class ExperimentConfig:
         def analyzer_draw_flippable(base_dir, graph_analyzer):
             # Get flippable plaquettes
             print("\tDrawing flippable states")
-            lowest_e = numpy.argmin(graph_analyzer.energies)
-            sample, energy, num_occurrences = self.data[lowest_e]
+            sample = graph_analyzer.lowest_e_sample
             draw_flippable_states(os.path.join(base_dir, "dimer_flippable_plot.svg"), self.graph.edges, sample)
 
         @analyzer
@@ -403,7 +396,7 @@ class ExperimentConfig:
             print("\tDefect histograms")
             pyplot.hist(total_defects_per_sample, bins=numpy.arange(0, numpy.max(total_defects_per_sample)))
             pyplot.savefig(os.path.join(base_dir, "defect_histogram.svg"))
-            pyplot.clf()
+            pyplot.close()
 
             return {"average_defects": average_defects, "stdv_defects": stdv_defects}
 
@@ -416,7 +409,7 @@ class ExperimentConfig:
             pyplot.imshow(defects_corr, interpolation='nearest')
             pyplot.colorbar()
             pyplot.savefig(os.path.join(base_dir, "defect_correlations.svg"))
-            pyplot.clf()
+            pyplot.close()
 
             print("\tCalculating distance correlations")
             average_corrs = numpy.mean(defects_corr_function, 0)
@@ -428,7 +421,7 @@ class ExperimentConfig:
             pyplot.xlabel("Defect distance (with edge length=1.0)")
             pyplot.ylabel("Correlation")
             pyplot.savefig(os.path.join(base_dir, "defect_correlation_distance.svg"))
-            pyplot.clf()
+            pyplot.close()
 
         @analyzer
         def draw_heightmap_fn(base_dir, graph_analyzer):
@@ -539,7 +532,7 @@ def draw_average_unit_cell_directions(filename, graph_analyzer, front=True):
     pyplot.grid()
     pyplot.gca().invert_yaxis()
     pyplot.savefig(filename)
-    pyplot.clf()
+    pyplot.close()
 
     # Calculate divergence along boundary
     min_x = min(cx for (cx, _), _ in unit_cell_averages.items())
@@ -595,7 +588,7 @@ def draw_heightmap(basedir, graph_analyzer):
             last_item = item
 
     energy, index = min(zip(graph_analyzer.energies, range(len(graph_analyzer.energies))))
-    sample = graph_analyzer.samples[index]
+    sample = graph_analyzer.lowest_e_sample
     heightmap = heights[:,index]
     min_height, max_height = numpy.min(heightmap), numpy.max(heightmap)
 

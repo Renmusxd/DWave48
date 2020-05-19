@@ -5,18 +5,11 @@ from bathroom_tile import graphbuilder
 class GraphAnalyzer:
     """Things about the graph using data from the samples."""
 
-    def __init__(self, graph, samples, energies, num_occurrences, flat_samples=None):
+    def __init__(self, graph, var_map, var_mat, energies):
         self.graph = graph
-        self.samples = samples
+        self.var_map = var_map
+        self.var_mat = var_mat
         self.energies = energies
-        self.num_occurrences = num_occurrences
-
-        # From get_flat_samples
-        self.var_map = None
-        self.var_mat = None
-        if flat_samples is not None:
-            self.var_map = flat_samples[0]
-            self.var_mat = flat_samples[1]
 
         # from get_correlation_matrix
         self.variable_correlations = None
@@ -63,17 +56,14 @@ class GraphAnalyzer:
         self.diagonal_dimer_euclidean_distance_correlations = None
         self.diagonal_dimer_euclidean_distance_stdv = None
 
-    def get_flat_samples(self):
-        if self.var_map is None or self.var_mat is None:
-            var_map, var_mat = flatten_dicts(self.samples)
-            self.var_map = var_map
-            self.var_mat = var_mat
-        return self.var_map, self.var_mat
+        # For ease of use later.
+        lowest_e = numpy.argmin(self.energies)
+        sample = var_mat[:, lowest_e]
+        self.lowest_e_sample = {k: sample[i] for i, k in enumerate(self.graph.all_vars)}
 
     def get_correlation_matrix(self):
         if self.variable_correlations is None:
-            _, var_mat = self.get_flat_samples()
-            self.variable_correlations = calculate_correlation_matrix(var_mat)
+            self.variable_correlations = calculate_correlation_matrix(self.var_mat)
         return self.variable_correlations
 
     def calculate_correlation_function(self):
@@ -106,12 +96,11 @@ class GraphAnalyzer:
         """Get matrix of dimers for each sample."""
         if self.dimer_matrix is None:
             # Get flat versions of variables, values, and make lookup tables.
-            var_map, var_mat = self.get_flat_samples()
-            var_lookup = {v: k for k, v in enumerate(var_map)}
+            var_lookup = {v: k for k, v in enumerate(self.var_map)}
             edge_list = numpy.asarray([(var_lookup[a], var_lookup[b]) for a, b in self.graph.sorted_edges])
             edge_values = numpy.asarray([self.graph.edges[edge] for edge in self.graph.sorted_edges])
-            a_values = var_mat[edge_list[:, 0], :]
-            b_values = var_mat[edge_list[:, 1], :]
+            a_values = self.var_mat[edge_list[:, 0], :]
+            b_values = self.var_mat[edge_list[:, 1], :]
 
             # Gives +1 if variables are equal, -1 if not
             spin_product = a_values * b_values
