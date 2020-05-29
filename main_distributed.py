@@ -43,8 +43,8 @@ if __name__ == "__main__":
 
         scalars = collections.defaultdict(list)
         for experiment in experiments_to_run:
-            experiment.run_or_load_experiment()
-            if parsed_args.analyze:
+            data_found = experiment.run_or_load_experiment(do_not_run=parsed_args.analyze)
+            if parsed_args.analyze and data_found:
                 experiment.add_default_analyzers()
                 results = experiment.analyze()
                 for k, v in results.items():

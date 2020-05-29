@@ -77,16 +77,18 @@ class ExperimentConfig:
         self.response = config.response
         self.graph = config.graph
 
-    def run_or_load_experiment(self, sample_kwargs=None, sampler_kwargs=None):
+    def run_or_load_experiment(self, sample_kwargs=None, sampler_kwargs=None, do_not_run=False):
         filepath = os.path.join(self.base_dir, "config.pickle")
         if not self.maybe_load_self(filepath):
+            if do_not_run:
+                return False
             if self.graph is None:
                 raise Exception("Graph not yet built")
             print("Running on dwave... ", end='')
             kwargs_for_sample = self.sample_kwargs or {}
             kwargs_for_sample.update(sample_kwargs or {})
             kwargs_for_sampler = self.sampler_kwargs or {}
-            kwargs_for_sampler.update(kwargs_for_sampler or {})
+            kwargs_for_sampler.update(sampler_kwargs or {})
             if self.gamma:
                 kwargs_for_sample.update({'transverse_field': self.gamma})
             self.response = self.sampler_fn(**kwargs_for_sampler).sample_ising(self.hs, self.graph.edges,
@@ -95,6 +97,7 @@ class ExperimentConfig:
                                                                                **kwargs_for_sample)
             print("done!")
             self.save_self(filepath)
+        return True
 
     def add_analysis(self, analyzer_fn):
         self.analyzers.append(analyzer_fn)

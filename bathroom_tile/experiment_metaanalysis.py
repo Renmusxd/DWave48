@@ -2,7 +2,7 @@ from matplotlib import pyplot
 import scipy.interpolate
 import numpy
 import os
-
+from matplotlib import cm
 
 def defect_plot(base_dir, scalars):
     inv_j = scalars['inv_j']
@@ -74,8 +74,15 @@ def flippable_phase(base_dir, scalars):
     mgrid_z = scipy.interpolate.griddata((gamma, kt_over_ej), flippable_count, (mgrid_x, mgrid_y), method='cubic')
 
     pyplot.contourf(mgrid_x, mgrid_y, mgrid_z)
+    pyplot.colorbar()
     pyplot.savefig(os.path.join(base_dir, 'flippable_phase.svg'))
     pyplot.clf()
+
+    pyplot.scatter(gamma, kt_over_ej, c=flippable_count, cmap='jet')
+    pyplot.colorbar()
+    pyplot.savefig(os.path.join(base_dir, 'flippable_phase_scatter.svg'))
+    pyplot.clf()
+
 
 def unit_cell_divergence_plot(base_dir, scalars):
     inv_j = scalars['inv_j']
