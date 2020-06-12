@@ -431,6 +431,14 @@ class ExperimentConfig:
             print("\tDrawing heightmap")
             draw_heightmap(base_dir, graph_analyzer)
 
+        @analyzer
+        def analyzer_dimer_orientations(base_dir, graph_analyzer):
+            print("\tCounting dimer orientations")
+            orientations = graph_analyzer.calculate_difference_order_parameter()
+            orientation_count = numpy.sum(orientations)
+            abs_orientation_count = numpy.sum(numpy.abs(orientations))
+            return {'abs_orientation_count': abs_orientation_count, 'orientation_count': orientation_count}
+
     def add_meta_analysis(self, analysis_fn):
         self.meta_analysis.append(analysis_fn)
 

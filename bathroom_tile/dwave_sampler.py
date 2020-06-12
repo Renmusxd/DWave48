@@ -43,7 +43,7 @@ class MachineTransverseFieldHelper:
 
 class DWaveSampler:
     """Wrapper for samplers.DWaveSampler"""
-    def __init__(self, ramp_up_slope=0.05, hold_time=50, quench_slope=1, s_map_file='dwave_energies/dw_2000q_2_1.txt', initial_state=None):
+    def __init__(self, ramp_up_slope=0.05, hold_time=50, quench_slope=1, s_map_file='dwave_energies/dw_2000q_2_1.txt', initial_state=None, dry_run=False):
         """
         Make a new DWaveSampler.
         :param ramp_up_slope:
@@ -56,6 +56,7 @@ class DWaveSampler:
         self.quench_slope = quench_slope
         self.field_helper = MachineTransverseFieldHelper(s_map_file=s_map_file)
         self.initial_state = initial_state
+        self.dry_run = dry_run
 
     def sample_ising(self, hs, edges, num_reads=1, auto_scale=True, transverse_field=0.0):
 
@@ -75,18 +76,27 @@ class DWaveSampler:
         else:
             s = 1.0
 
-        machine_sampler = samplers.DWaveSampler()
-        dwave_samples = machine_sampler.sample_ising(hs, edges, num_reads=num_reads, auto_scale=auto_scale,
-                                                     anneal_schedule=schedule)
-        all_vars = list(sorted(set([v for edge in edges for v in [edge[0],edge[1]]])))
-        return DWaveResponse(dwave_samples, all_vars, s=s, j=self.field_helper.j_for_s(s), gamma=transverse_field)
+        all_vars = list(sorted(set([v for edge in edges for v in [edge[0], edge[1]]])))
+
+        if not self.dry_run:
+            machine_sampler = samplers.DWaveSampler()
+            dwave_samples = machine_sampler.sample_ising(hs, edges, num_reads=num_reads, auto_scale=auto_scale,
+                                                         anneal_schedule=schedule)
+            energies = [energy for _, energy, num_occ in dwave_samples.data() for _ in range(num_occ)]
+            data = [[sample[k] for k in all_vars] for sample, _, num_occ in dwave_samples.data() for _ in range(num_occ)]
+            data = numpy.asarray(data).T
+
+            return DWaveResponse(data, energies, all_vars, s=s, j=self.field_helper.j_for_s(s), gamma=transverse_field)
+        else:
+            data = numpy.ones((len(all_vars), num_reads))
+            energies = numpy.zeros((num_reads,))
+            return DWaveResponse(data, energies, all_vars, s=s, j=self.field_helper.j_for_s(s), gamma=transverse_field)
 
 
 class DWaveResponse:
-    def __init__(self, data, all_vars, s, j, gamma):
-        self.energies = [energy for _, energy, num_occ in data.data() for _ in range(num_occ)]
-        data = [[sample[k] for k in all_vars] for sample, _, num_occ in data.data() for _ in range(num_occ)]
-        self.my_data = numpy.asarray(data).T
+    def __init__(self, data, energies, all_vars, s, j, gamma):
+        self.energies = energies
+        self.my_data = data
         self.s = s
         self.j = j
         self.gamma = gamma

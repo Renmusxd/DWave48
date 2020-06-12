@@ -19,6 +19,7 @@ def defect_plot(base_dir, scalars):
 
     pyplot.errorbar(ej_by_kt, defects, yerr=defects_stdv)
     pyplot.xlabel('J/kT')
+    pyplot.xlabel('J/kT')
     pyplot.ylabel('Number of defects')
     pyplot.savefig(os.path.join(base_dir, 'defects_vs_ej_by_kt.svg'))
     pyplot.clf()
@@ -57,30 +58,71 @@ def flippable_plot(base_dir, scalars):
 
 
 def flippable_phase(base_dir, scalars):
+    gamma_over_j = numpy.asarray(scalars['gamma']) / numpy.asarray(scalars['j'])
+
     if 'actual_j' in scalars:
         # This name is weird, its actually the multiplier for j
         ratio = scalars['actual_j']
         ej_over_kt = numpy.asarray(scalars['ej_by_kt']) * ratio
+        gamma_over_j = gamma_over_j / ratio
     else:
         ej_over_kt = scalars['ej_by_kt']
-    gamma = scalars['gamma']
+
     flippable_count = scalars['flippable_count']
 
     kt_over_ej = [1./jk for jk in ej_over_kt]
 
     # Make a grid
-    mgrid_x, mgrid_y = numpy.meshgrid(numpy.linspace(min(gamma), max(gamma), 1000),
+    mgrid_x, mgrid_y = numpy.meshgrid(numpy.linspace(min(gamma_over_j), max(gamma_over_j), 1000),
                                       numpy.linspace(min(kt_over_ej), max(kt_over_ej), 1000))
-    mgrid_z = scipy.interpolate.griddata((gamma, kt_over_ej), flippable_count, (mgrid_x, mgrid_y), method='cubic')
+    mgrid_z = scipy.interpolate.griddata((gamma_over_j, kt_over_ej), flippable_count, (mgrid_x, mgrid_y), method='cubic')
 
     pyplot.contourf(mgrid_x, mgrid_y, mgrid_z)
+    pyplot.xlabel(r'$\Gamma / J$')
+    pyplot.ylabel(r'$kT / J$')
     pyplot.colorbar()
     pyplot.savefig(os.path.join(base_dir, 'flippable_phase.svg'))
     pyplot.clf()
 
-    pyplot.scatter(gamma, kt_over_ej, c=flippable_count, cmap='jet')
+    pyplot.scatter(gamma_over_j, kt_over_ej, c=flippable_count, cmap='jet')
+    pyplot.xlabel(r'$\Gamma / J$')
+    pyplot.ylabel(r'$kT / J$')
     pyplot.colorbar()
     pyplot.savefig(os.path.join(base_dir, 'flippable_phase_scatter.svg'))
+    pyplot.clf()
+
+
+def orientation_phase(base_dir, scalars):
+    gamma_over_j = numpy.asarray(scalars['gamma']) / numpy.asarray(scalars['j'])
+
+    if 'actual_j' in scalars:
+        # This name is weird, its actually the multiplier for j
+        ratio = numpy.asarray(scalars['actual_j'])
+        ej_over_kt = numpy.asarray(scalars['ej_by_kt']) * ratio
+        gamma_over_j = gamma_over_j / ratio
+    else:
+        ej_over_kt = scalars['ej_by_kt']
+    abs_orientation_count = scalars['abs_orientation_count']
+
+    kt_over_ej = [1./jk for jk in ej_over_kt]
+
+    # Make a grid
+    mgrid_x, mgrid_y = numpy.meshgrid(numpy.linspace(min(gamma_over_j), max(gamma_over_j), 1000),
+                                      numpy.linspace(min(kt_over_ej), max(kt_over_ej), 1000))
+    mgrid_z = scipy.interpolate.griddata((gamma_over_j, kt_over_ej), abs_orientation_count, (mgrid_x, mgrid_y), method='cubic')
+
+    pyplot.contourf(mgrid_x, mgrid_y, mgrid_z)
+    pyplot.xlabel(r'$\Gamma / J$')
+    pyplot.ylabel(r'$kT / J$')
+    pyplot.colorbar()
+    pyplot.savefig(os.path.join(base_dir, 'abs_orientation_phase.svg'))
+    pyplot.clf()
+
+    pyplot.scatter(gamma_over_j, kt_over_ej, c=abs_orientation_count, cmap='jet')
+    pyplot.xlabel(r'$\Gamma / J$')
+    pyplot.ylabel(r'$kT / J$')
+    pyplot.colorbar()
+    pyplot.savefig(os.path.join(base_dir, 'abs_orientation_phase_scatter.svg'))
     pyplot.clf()
 
 

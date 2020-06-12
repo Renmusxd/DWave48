@@ -38,29 +38,45 @@ if __name__ == "__main__":
                     print("\tDone!")
 
         shards = parsed_args.shards or list(range(len(configs)))
-        experiments_to_run = (exp for i, exp in enumerate(configs)
+        experiments_to_run = ((i, exp) for i, exp in enumerate(configs)
                               if i in shards)
 
-        scalars = collections.defaultdict(list)
-        for experiment in experiments_to_run:
+        scalars = collections.defaultdict(dict)
+        for i, experiment in experiments_to_run:
             data_found = experiment.run_or_load_experiment(do_not_run=parsed_args.analyze)
             if parsed_args.analyze and data_found:
                 experiment.add_default_analyzers()
                 results = experiment.analyze()
                 for k, v in results.items():
-                    scalars[k].append(v)
+                    scalars[k][i] = v
+
+                with open(os.path.join(experiment.base_dir, 'scalars.pickle'), 'wb') as w:
+                    pickle.dump(results, w)
 
         if parsed_args.analyze:
+
+            scalar_keys = set()
+            for k, v in scalars.items():
+                for i in v:
+                    scalar_keys.add(i)
+
+            scalar_clean = collections.defaultdict(list)
+            for i in sorted(scalar_keys):
+                if all(i in scalars[k] for k in scalars):
+                    for k in scalars:
+                        scalar_clean[k].append(scalars[k][i])
+
             for k, vs in scalars.items():
                 with open(os.path.join(base_directory, "{}.txt".format(k)), "w") as w:
-                    for i, v in enumerate(vs):
+                    for i, v in sorted(vs.items()):
                         w.write("{}\t{}\n".format(i, v))
-
-                pyplot.plot(vs, 'x--')
+                i_s, v_s = zip(*sorted(vs.items()))
+                pyplot.plot(i_s, v_s, 'x--')
                 pyplot.savefig(os.path.join(base_directory, "{}.svg".format(k)))
                 pyplot.clf()
 
-            plot_functions = [defect_plot, flippable_plot, unit_cell_divergence_plot, flippable_phase]
+            plot_functions = [defect_plot, flippable_plot, unit_cell_divergence_plot,
+                              flippable_phase, orientation_phase]
             for plot_fn in plot_functions:
                 try:
                     plot_fn(base_directory, scalars)

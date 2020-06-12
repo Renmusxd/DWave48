@@ -363,6 +363,57 @@ class GraphAnalyzer:
             self.defect_euclidean_distance_stdv = distance_stdv
         return defect_corr, self.defect_euclidean_distance_correlations, self.defect_euclidean_distance_stdv, self.graph.dimer_vertex_list
 
+    def calculate_fourier_order_parameter(self, kx=None, ky=None):
+        """Calculate the order parameter based on the fourier transform of the dimers."""
+
+        if kx is None:
+            ux1, _ = graphbuilder.get_unit_cell_cartesian(0, 0)
+            ux2, _ = graphbuilder.get_unit_cell_cartesian(1, 0)
+            kx = numpy.pi / (2 * (ux2 - ux1))
+        if ky is None:
+            _, uy1 = graphbuilder.get_unit_cell_cartesian(0, 0)
+            _, uy2 = graphbuilder.get_unit_cell_cartesian(0, 1)
+            ky = numpy.pi / (2 * (uy2 - uy1))
+
+        mask = self.get_diagonal_dimer_mask()
+        var_poss = numpy.asarray([graphbuilder.get_var_cartesian(a) for a, m in zip(self.var_map, mask) if m])
+        diagonal_edges = numpy.asarray([(a, b) for (a, b), m in zip(self.graph.sorted_edges, mask) if m])
+        diagonal_as, diagonal_bs = diagonal_edges[:,0], diagonal_edges[:,1]
+        varxs, varys = var_poss[:,0], var_poss[:,1]
+        edge_center_xs = (varxs[diagonal_as] + varxs[diagonal_bs])/2.0
+        edge_center_ys = (varys[diagonal_as] + varys[diagonal_bs])/2.0
+
+        mults = numpy.exp(1.0j*kx*edge_center_xs) * numpy.exp(1.0j*ky*edge_center_ys)
+
+        diagonal_dimers = self.get_diagonal_dimer_matrix()
+        diagonal_dimers_mask = (diagonal_dimers+1) / 2
+
+        # TODO finish this function
+
+    def calculate_difference_order_parameter(self):
+        mask = self.get_diagonal_dimer_mask()
+        var_poss = numpy.asarray([graphbuilder.get_var_cartesian(a) for a in self.var_map])
+
+        var_lookup = {v: k for k,v in enumerate(self.var_map)}
+        diagonal_edges = numpy.asarray([(var_lookup[a], var_lookup[b])
+                                        for (a, b), m in zip(self.graph.sorted_edges, mask) if m])
+        diagonal_as, diagonal_bs = diagonal_edges[:, 0], diagonal_edges[:, 1]
+        varxs, varys = var_poss[:, 0], var_poss[:, 1]
+        edge_diff_xs = numpy.sign(varxs[diagonal_as] - varxs[diagonal_bs])
+        edge_diff_ys = numpy.sign(varys[diagonal_as] - varys[diagonal_bs])
+        tl_br_mask = edge_diff_xs == edge_diff_ys
+        tr_bl_mask = edge_diff_xs != edge_diff_ys
+
+        diagonal_dimers = self.get_diagonal_dimer_matrix()
+        diagonal_dimers_tf = (diagonal_dimers + 1) / 2
+        total_diagonal_dimers = numpy.sum(diagonal_dimers_tf, axis=0)
+
+        tl_br = numpy.sum(numpy.expand_dims(tl_br_mask, -1) * diagonal_dimers_tf, axis=0)
+        tr_bl = numpy.sum(numpy.expand_dims(tr_bl_mask, -1) * diagonal_dimers_tf, axis=0)
+
+        return (tl_br - tr_bl) / (1.0*total_diagonal_dimers)
+
+
     def get_heightmaps(self):
         # To assign a height to each vertex, make the path through the vertices, passing through each edge.
         # treat the vertices connecting unit cells as a single vertex, since in the perfect dimer ground states they

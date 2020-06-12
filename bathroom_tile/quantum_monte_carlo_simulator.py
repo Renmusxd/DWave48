@@ -36,7 +36,6 @@ class QuantumMonteCarloSampler:
         lattice = py_monte_carlo.Lattice(edges)
         lattice.set_transverse_field(transverse_field)
 
-        # TODO test this code after numpy changes.
         energies, states = lattice.run_quantum_monte_carlo_sampling(self.beta, self.timesteps, experiments,
                                                                     sampling_wait_buffer=self.wait_time,
                                                                     sampling_freq=self.sampling_freq,
