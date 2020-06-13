@@ -1,1 +1,2 @@
 import bathroom_tile.graphbuilder as graphbuilder
+import bathroom_tile.graphanalysis as graphanalysis

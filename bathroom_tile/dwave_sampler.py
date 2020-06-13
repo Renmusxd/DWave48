@@ -2,6 +2,13 @@ from dwave.system import samplers
 import scipy.interpolate
 import numpy
 
+CLIENT_SINGLETON = None
+
+def get_client_singleton():
+    global CLIENT_SINGLETON
+    if CLIENT_SINGLETON is None:
+        CLIENT_SINGLETON = samplers.DWaveSampler()
+    return CLIENT_SINGLETON
 
 class MachineTransverseFieldHelper:
     def __init__(self, s_map_file='dwave_energies/dw_2000q_2_1.txt'):
@@ -79,7 +86,7 @@ class DWaveSampler:
         all_vars = list(sorted(set([v for edge in edges for v in [edge[0], edge[1]]])))
 
         if not self.dry_run:
-            machine_sampler = samplers.DWaveSampler()
+            machine_sampler = get_client_singleton()
             dwave_samples = machine_sampler.sample_ising(hs, edges, num_reads=num_reads, auto_scale=auto_scale,
                                                          anneal_schedule=schedule)
             energies = [energy for _, energy, num_occ in dwave_samples.data() for _ in range(num_occ)]
@@ -88,7 +95,7 @@ class DWaveSampler:
 
             return DWaveResponse(data, energies, all_vars, s=s, j=self.field_helper.j_for_s(s), gamma=transverse_field)
         else:
-            data = numpy.ones((len(all_vars), num_reads))
+            data = numpy.random.choice(a=[-1, 1], size=(len(all_vars), num_reads), p=[0.5, 0.5])
             energies = numpy.zeros((num_reads,))
             return DWaveResponse(data, energies, all_vars, s=s, j=self.field_helper.j_for_s(s), gamma=transverse_field)
 
