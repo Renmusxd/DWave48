@@ -13,7 +13,7 @@ START=$(date +%s)
 
 export RAYON_NUM_THREADS=$NSLOTS
 echo "$HOME/.virtualenvs/dwave/bin/python main_distributed.py --shards=$SHARD --nshards=$NSHARDS --base_dir=\"$OUTPUT_DIR\" --run"
-$HOME/.virtualenvs/dwave/bin/python main_distributed.py --shards=$SHARD --nshards=$NSHARDS --base_dir="$OUTPUT_DIR" --run"
+$HOME/.virtualenvs/dwave/bin/python main_distributed.py --shards=$SHARD --nshards=$NSHARDS --base_dir="$OUTPUT_DIR" --run
 
 END=$(date +%s)
 ELAPSED=$((END-START))
