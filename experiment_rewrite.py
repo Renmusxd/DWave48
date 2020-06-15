@@ -5,7 +5,8 @@ import os
 
 
 class BathroomTileExperiment:
-    def __init__(self, sampler, unit_cell_rect=None, base_ej_over_kt=39.72, j=1.0, gamma=0.0, graph=None, num_reads=10000, graph_build_kwargs=None, sampler_build_kwargs=None, sampler_sample_kwargs=None):
+    def __init__(self, sampler, unit_cell_rect=None, base_ej_over_kt=39.72, j=1.0, gamma=0.0, graph=None,
+                 num_reads=10000, graph_build_kwargs=None, sampler_build_kwargs=None, sampler_sample_kwargs=None):
         if unit_cell_rect:
             (min_x, max_x), (min_y, max_y) = unit_cell_rect
             gb = bathroom_tile.graphbuilder.GraphBuilder(j=j)
@@ -60,12 +61,12 @@ class BathroomTileExperiment:
                                       sampler_build_kwargs=obj['sampler_build_kwargs'],
                                       sampler_sample_kwargs=obj['sampler_sample_kwargs'])
 
-    def run_experiment_or_load(self, dirpath):
+    def run_experiment_or_load(self, dirpath, allow_run=True):
         if not os.path.exists(dirpath):
             os.makedirs(dirpath)
 
         results = BathroomTileExperiment.load_if_available(dirpath)
-        if results is None:
+        if results is None and allow_run:
             sampler = self.sampler(**self.sampler_build_kwargs)
             results = sampler.sample_ising(self.graph.hs, self.graph.edges, transverse_field=self.gamma,
                                            num_reads=self.num_reads, auto_scale=False,

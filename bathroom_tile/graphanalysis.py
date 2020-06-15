@@ -283,7 +283,8 @@ class GraphAnalyzer:
         if self.flippable_squares is None:
             # Each cell-cell connection gives a flippable square.
             # Label each by (cell)-(cell)
-            unit_cells = set(self.graph.unit_cells)
+            unit_cells, _ = self.graph.calculate_unit_cells()
+            unit_cells = set(unit_cells)
             connections = []
             for (cx, cy, front) in unit_cells:
                 # Check cx+1 and cy+1, the [cu-1] will be checked by the other ones

@@ -3,16 +3,17 @@
 #$ -cwd
 #$ -m ea
 #$ -M sumnerh@bu.edu
-#$ -l h_rt=72:00:00
+#$ -l h_rt=144:00:00
 
 SHARD=$((SGE_TASK_ID - 1))
 OUTPUT_DIR=$1
+NSHARDS=$2
 
 START=$(date +%s)
 
 export RAYON_NUM_THREADS=$NSLOTS
-echo "$HOME/.virtualenvs/dwave/bin/python main_distributed.py --shard=$SHARD --base_dir=$OUTPUT_DIR"
-$HOME/.virtualenvs/dwave/bin/python main_distributed.py --shard=$SHARD --base_dir="$OUTPUT_DIR"
+echo "$HOME/.virtualenvs/dwave/bin/python main_distributed.py --shards=$SHARD --nshards=$NSHARDS --base_dir=$OUTPUT_DIR --run"
+$HOME/.virtualenvs/dwave/bin/python main_distributed.py --shards=$SHARD --nshards=$NSHARDS --base_dir="$OUTPUT_DIR --run"
 
 END=$(date +%s)
 ELAPSED=$((END-START))

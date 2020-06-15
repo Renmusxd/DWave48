@@ -35,6 +35,7 @@ if __name__ == "__main__":
     parser.add_argument('--run', action='store_true', default=False)
     parser.add_argument('--analyze', action='store_true', default=False)
     parser.add_argument('--reanalyze', action='store_true', default=False)
+    parser.add_argument('--multiprocess_hack', action='store_true', default=False)
 
     parsed_args = parser.parse_args()
 
@@ -70,9 +71,12 @@ if __name__ == "__main__":
             return experiment_dir
 
         # Use a map to stop dwave memory leaks from killing the process.
-        mp = multiprocessing.Pool(1)
-        experiment_paths = mp.map(f, experiments_to_run)
-        mp.close()
+        if parsed_args.multiprocess_hack:
+            mp = multiprocessing.Pool(1)
+            experiment_paths = mp.map(f, experiments_to_run)
+            mp.close()
+        else:
+            experiment_paths = list(map(f, experiments_to_run))
         experiment_gen = enumerate(LazyExperiment(experiment_base_path=basedir) for basedir in experiment_paths)
 
     if parsed_args.analyze or parsed_args.reanalyze:
@@ -91,22 +95,26 @@ if __name__ == "__main__":
             else:
                 experiment = experiment.get()
 
-                data, energies, exp_scalars = experiment.run_experiment_or_load(os.path.join(experiment_dir, 'data'))
-                analyzer = bathroom_tile.graphanalysis.GraphAnalyzer(experiment.graph, experiment.graph.all_vars,
-                                                                     data, energies)
+                result = experiment.run_experiment_or_load(os.path.join(experiment_dir, 'data'), allow_run=False)
+                if result is not None:
+                    data, energies, exp_scalars = result
+                    analyzer = bathroom_tile.graphanalysis.GraphAnalyzer(experiment.graph, experiment.graph.all_vars,
+                                                                         data, energies)
 
-                orientations = analyzer.calculate_difference_order_parameter()
-                orientation_count = numpy.mean(orientations)
-                abs_orientation_count = numpy.mean(numpy.abs(orientations))
-                exp_scalars['orientation_count'] = orientation_count
-                exp_scalars['abs_orientation_count'] = abs_orientation_count
+                    orientations = analyzer.calculate_difference_order_parameter()
+                    orientation_count = numpy.mean(orientations)
+                    abs_orientation_count = numpy.mean(numpy.abs(orientations))
+                    exp_scalars['orientation_count'] = orientation_count
+                    exp_scalars['abs_orientation_count'] = abs_orientation_count
 
-                flippables = analyzer.get_flippable_squares()
-                flippable_count = numpy.mean(numpy.sum(flippables, axis=0))
-                exp_scalars['flippable_count'] = flippable_count
+                    flippables = analyzer.get_flippable_squares()
+                    flippable_count = numpy.mean(numpy.sum(flippables, axis=0))
+                    exp_scalars['flippable_count'] = flippable_count
 
-                with open(scalars_path, 'wb') as w:
-                    pickle.dump(exp_scalars, w)
+                    with open(scalars_path, 'wb') as w:
+                        pickle.dump(exp_scalars, w)
+                else:
+                    exp_scalars = {}
 
             for k, v in exp_scalars.items():
                 scalars[k][i] = v

@@ -18,8 +18,8 @@ else
 	cp -r graphcache "$BASE_DIR/code"
 	cd "$BASE_DIR/code" || exit
 	echo "Working directory: $(pwd)"
-	echo "qsub -wd \"$BASE_DIR/code\" -t 1-$NUM_SHARDS run.sh \"$BASE_DIR\""
-	OUTPUT=$(qsub -wd "$BASE_DIR/code" -t 1-"$NUM_SHARDS" run.sh "$BASE_DIR")
+	echo "qsub -wd \"$BASE_DIR/code\" -t 1-$NUM_SHARDS run.sh \"$BASE_DIR\" \"$NUM_SHARDS\""
+	OUTPUT=$(qsub -wd "$BASE_DIR/code" -t 1-"$NUM_SHARDS" run.sh "$BASE_DIR" "$NUM_SHARDS")
 	echo "$OUTPUT"
 	JOB_ID=$(echo "$OUTPUT" | grep -E -o "[0-9]+" | head -1)
 	echo "qsub -wd \"$BASE_DIR/code\" -hold_jid $JOB_ID run_analysis.sh \"$BASE_DIR\""
