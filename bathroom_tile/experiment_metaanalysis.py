@@ -125,7 +125,6 @@ def orientation_phase(base_dir, scalars):
     pyplot.savefig(os.path.join(base_dir, 'abs_orientation_phase_scatter.svg'))
     pyplot.clf()
 
-
 def unit_cell_divergence_plot(base_dir, scalars):
     inv_j = scalars['inv_j']
     ej_by_kt = scalars['ej_by_kt']

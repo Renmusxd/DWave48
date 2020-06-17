@@ -1,4 +1,5 @@
 from bathroom_tile.experiment_metaanalysis import flippable_phase, orientation_phase
+from bathroom_tile import graphbuilder
 from experiment_gen import experiment_generator
 import experiment_rewrite
 import bathroom_tile
@@ -110,6 +111,32 @@ if __name__ == "__main__":
                     flippables = analyzer.get_flippable_squares()
                     flippable_count = numpy.mean(numpy.sum(flippables, axis=0))
                     exp_scalars['flippable_count'] = flippable_count
+
+                    # Structure factor
+                    # Get diagonal unit cell distance
+                    x0, y0 = graphbuilder.get_unit_cell_cartesian(0,0)
+                    x1, y1 = graphbuilder.get_unit_cell_cartesian(1,1)
+                    r = numpy.sqrt((x1-x0)**2 + (y1-y0)**2)
+
+                    ks = numpy.linspace(-numpy.pi, numpy.pi, 17)  # -8pi/8 .. + 0
+                    kas = numpy.dstack([ks, ks])
+
+                    KAs, KBs = numpy.meshgrid(ks, ks)
+                    KAs_xy = numpy.dstack([KAs, KAs])/r
+                    KBs_xy = numpy.dstack([KBs, -KBs])/r
+
+                    orders = analyzer.calculate_fourier_order_parameter(k_nesw=KAs_xy, k_nwse=KBs_xy)
+                    orders = numpy.mean(orders, axis=-1)
+
+                    try:
+                        pyplot.contourf(KAs, KBs, orders)
+                        pyplot.colorbar()
+                        pyplot.xlabel(r'k(1,1)')
+                        pyplot.ylabel(r'k(1,-1)')
+                        pyplot.savefig(os.path.join(experiment_dir, 'fourier_order.png'))
+                        pyplot.close()
+                    except Exception as e:
+                        print(e)
 
                     with open(scalars_path, 'wb') as w:
                         pickle.dump(exp_scalars, w)

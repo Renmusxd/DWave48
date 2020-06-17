@@ -6,12 +6,12 @@ import numpy
 
 
 def experiment_generator(base_dir):
-    num_reads = 10000
+    num_reads = 10
 
     ng = 20
     nj = 20
     beta = 39.72
-    gammas = numpy.linspace(0.01, 2.0, ng)
+    gammas = numpy.linspace(0.01, 0.2, ng)
     js = 10**numpy.linspace(numpy.log10(1/beta), numpy.log10(2), nj)
     JS, GS = numpy.meshgrid(js, gammas)
     samples_to_take = list(zip(JS.flatten(), GS.flatten()))
@@ -27,12 +27,14 @@ def experiment_generator(base_dir):
             min_y = 0
             max_y = 8
             unit_cell_rect = ((min_x, max_x), (min_y, max_y))
-            experiment = BathroomTileExperiment(quantum_monte_carlo_simulator.QuantumMonteCarloSampler,
+            experiment = BathroomTileExperiment(dwave_sampler.DWaveSampler,
+                                                # quantum_monte_carlo_simulator.QuantumMonteCarloSampler,
                                                 unit_cell_rect=unit_cell_rect,
                                                 base_ej_over_kt=beta,
                                                 j=j, gamma=gamma*j, num_reads=num_reads,
                                                 graph_build_kwargs={'ideal_periodic_boundaries': True},
-                                                sampler_build_kwargs={'thermalization_time': 1e6,
-                                                                       'timesteps': 2e6,
-                                                                       'sampling_freq': 1e3})
+                                                # sampler_build_kwargs={'thermalization_time': 1e6,
+                                                #                        'timesteps': 2e6,
+                                                #                        'sampling_freq': 1e3})
+                                                sampler_build_kwargs={'dry_run': True})
         yield experiment
