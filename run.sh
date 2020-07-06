@@ -1,7 +1,7 @@
 #!/bin/sh
 #$ -N dwave_monte_carlo
 #$ -cwd
-#$ -m ea
+#$ -m a
 #$ -M sumnerh@bu.edu
 #$ -l h_rt=144:00:00
 

@@ -23,20 +23,27 @@ class MachineTransverseFieldHelper:
             s_map = list(zip(ss, (a/bmax for a in a_s)))
             s_bmap = list(zip(ss, (b/bmax for b in b_s)))
 
-        xs, ys = zip(*s_map)
-        self.max_field = ys[0]
-        self.s_to_a = scipy.interpolate.interp1d(xs, ys)
-        self.a_to_s = scipy.interpolate.interp1d(ys, xs)
+        a_xs, a_ys = zip(*s_map)
+        self.max_field = a_ys[0]
+        self.s_to_a = scipy.interpolate.interp1d(a_xs, a_ys)
+        self.a_to_s = scipy.interpolate.interp1d(a_ys, a_xs)
 
-        xs, ys = zip(*s_bmap)
-        self.s_to_b = scipy.interpolate.interp1d(xs, ys)
-        self.b_to_s = scipy.interpolate.interp1d(ys, xs)
+        b_xs, b_ys = zip(*s_bmap)
+        self.s_to_b = scipy.interpolate.interp1d(b_xs, b_ys)
+        self.b_to_s = scipy.interpolate.interp1d(b_ys, b_xs)
+
+        ratios = list(a/b for a, b in zip(a_ys, b_ys))
+        self.s_to_a_over_b = scipy.interpolate.interp1d(b_xs, ratios)
+        self.a_over_b_to_s = scipy.interpolate.interp1d(ratios, b_xs)
 
         self.s_map = s_map
         self.s_bmad = s_bmap
 
     def s_for_gamma(self, gamma):
         return float(self.a_to_s(gamma))
+
+    def s_for_gamma_ratio(self, gamma_over_j):
+        return float(self.a_over_b_to_s(gamma_over_j))
 
     def gamma_for_s(self, s):
         return float(self.s_to_a(s))

@@ -1,4 +1,4 @@
-from bathroom_tile.experiment_metaanalysis import flippable_phase, orientation_phase
+from bathroom_tile.experiment_metaanalysis import flippable_phase, orientation_phase, psi_phase
 from bathroom_tile import graphbuilder
 from experiment_gen import experiment_generator
 import experiment_rewrite
@@ -127,9 +127,10 @@ if __name__ == "__main__":
 
                     orders = analyzer.calculate_fourier_order_parameter(k_nesw=KAs_xy, k_nwse=KBs_xy)
                     orders = numpy.mean(orders, axis=-1)
+                    fourier_order = numpy.sum(orders, axis=0)
 
                     try:
-                        pyplot.contourf(KAs, KBs, orders)
+                        pyplot.contourf(KAs, KBs, fourier_order)
                         pyplot.colorbar()
                         pyplot.xlabel(r'k(1,1)')
                         pyplot.ylabel(r'k(1,-1)')
@@ -137,6 +138,11 @@ if __name__ == "__main__":
                         pyplot.close()
                     except Exception as e:
                         print(e)
+
+                    pi_pi_order_params = orders[:,-1,-1]
+                    psi = 2*(pi_pi_order_params[0] + 1.0j*pi_pi_order_params[1])
+                    order_param = numpy.abs(psi) * numpy.cos(4 * numpy.angle(psi))
+                    exp_scalars['psi_order_param'] = order_param
 
                     with open(scalars_path, 'wb') as w:
                         pickle.dump(exp_scalars, w)
@@ -172,7 +178,7 @@ if __name__ == "__main__":
             pyplot.savefig(os.path.join(base_directory, "{}.svg".format(k)))
             pyplot.clf()
 
-        plot_functions = [flippable_phase, orientation_phase]
+        plot_functions = [flippable_phase, orientation_phase, psi_phase]
         for plot_fn in plot_functions:
             try:
                 plot_fn(base_directory, scalar_clean)

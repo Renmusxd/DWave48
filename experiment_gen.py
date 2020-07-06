@@ -6,17 +6,24 @@ import numpy
 
 
 def experiment_generator(base_dir):
-    num_reads = 10
+    num_reads = 10000
 
     ng = 20
-    nj = 20
+    nj = 10
     beta = 39.72
-    gammas = numpy.linspace(0.01, 0.2, ng)
-    js = 10**numpy.linspace(numpy.log10(1/beta), numpy.log10(2), nj)
-    JS, GS = numpy.meshgrid(js, gammas)
+
+    mtfh = dwave_sampler.MachineTransverseFieldHelper()
+
+    gamma_ratios = numpy.linspace(0.01/beta, 3.0/beta, ng)
+    js = 1./numpy.linspace(beta, 1.0, nj)
+    JS, GS = numpy.meshgrid(js, gamma_ratios)
     samples_to_take = list(zip(JS.flatten(), GS.flatten()))
 
-    for i, (j, gamma) in enumerate(samples_to_take):
+    for i, (j, gamma_ratio) in enumerate(samples_to_take):
+        s = mtfh.s_for_gamma_ratio(gamma_ratio)
+        abs_gamma = mtfh.gamma_for_s(s)
+        j_mult = mtfh.j_for_s(s)
+
         experiment_dir = os.path.join(base_dir, "experiment_{}".format(i))
         config_pickle = os.path.join(experiment_dir, 'config.pickle')
         if os.path.exists(config_pickle):
@@ -27,14 +34,14 @@ def experiment_generator(base_dir):
             min_y = 0
             max_y = 8
             unit_cell_rect = ((min_x, max_x), (min_y, max_y))
-            experiment = BathroomTileExperiment(dwave_sampler.DWaveSampler,
-                                                # quantum_monte_carlo_simulator.QuantumMonteCarloSampler,
+            experiment = BathroomTileExperiment(quantum_monte_carlo_simulator.QuantumMonteCarloSampler,
                                                 unit_cell_rect=unit_cell_rect,
                                                 base_ej_over_kt=beta,
-                                                j=j, gamma=gamma*j, num_reads=num_reads,
+                                                j=j, gamma=abs_gamma, num_reads=num_reads,
                                                 graph_build_kwargs={'ideal_periodic_boundaries': True},
-                                                # sampler_build_kwargs={'thermalization_time': 1e6,
-                                                #                        'timesteps': 2e6,
-                                                #                        'sampling_freq': 1e3})
-                                                sampler_build_kwargs={'dry_run': True})
+                                                sampler_build_kwargs={'thermalization_time': 1e6,
+                                                                      'timesteps': 1e7 + 1e6,
+                                                                      'sampling_freq': 1e4},
+                                                # sampler_build_kwargs={'dry_run': True}
+                                                )
         yield experiment
