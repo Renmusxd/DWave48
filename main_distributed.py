@@ -112,6 +112,10 @@ if __name__ == "__main__":
                     flippable_count = numpy.mean(numpy.sum(flippables, axis=0))
                     exp_scalars['flippable_count'] = flippable_count
 
+                    complex_pi_pi = analyzer.calculate_complex_angle_order_parameter()
+                    complex_pi_pi_average = numpy.mean((complex_pi_pi**4).real)
+                    exp_scalars['complex_pi_pi_average'] = complex_pi_pi_average
+
                     # Structure factor
                     # Get diagonal unit cell distance
                     x0, y0 = graphbuilder.get_unit_cell_cartesian(0,0)

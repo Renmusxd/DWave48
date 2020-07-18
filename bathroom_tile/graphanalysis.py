@@ -433,6 +433,55 @@ class GraphAnalyzer:
         orders = numpy.stack([nwse/total_diagonal_dimers, nesw/total_diagonal_dimers])
         return orders
 
+    def calculate_complex_angle_order_parameter(self):
+        # Look just at unit cells and see which dimers break
+        unit_cells, _ = self.graph.calculate_unit_cells()
+        unit_cell_lookup = {(cx, cy): i for i, (cx, cy, _) in enumerate(unit_cells)}
+        n_unit_cells = len(unit_cells)
+        n_edges = len(self.graph.sorted_edges)
+        edge_to_unit_cell_orientations = numpy.zeros((n_unit_cells, n_edges), dtype=numpy.complex128)
+        edge_to_unit_cell_count = numpy.zeros((n_unit_cells, n_edges))
+
+        for edge_indx, (var_a, var_b) in enumerate(self.graph.sorted_edges):
+            unit_ax, unit_ay, _ = graphbuilder.get_var_traits(var_a)
+            unit_bx, unit_by, _ = graphbuilder.get_var_traits(var_b)
+            if unit_ax == unit_bx and unit_ay == unit_by:
+                unit_cell_indx = unit_cell_lookup[(unit_ax, unit_ay)]
+                edge_to_unit_cell_count[unit_cell_indx, edge_indx] = 1
+
+                dx_a, dy_a = graphbuilder.calculate_variable_direction(var_a)
+                dx_b, dy_b = graphbuilder.calculate_variable_direction(var_b)
+
+                dx = dx_a + dx_b
+                dy = dy_a + dy_b
+                if (dx, dy) == (1, 1):
+                    orientation = 1.0
+                elif (dx, dy) == (1, -1):
+                    orientation = 1.0j
+                elif (dx, dy) == (-1, -1):
+                    orientation = -1.0
+                elif (dx, dy) == (-1, 1):
+                    orientation = -1.0j
+                else:
+                    orientation = 0.0
+
+                edge_to_unit_cell_orientations[unit_cell_indx, edge_indx] = orientation
+
+        dimers = self.get_dimer_matrix()
+
+        dimers = (dimers+1)/2
+
+        dimer_counts = edge_to_unit_cell_count @ dimers
+        unit_cell_orientations = edge_to_unit_cell_orientations @ dimers
+        dimer_mask = dimer_counts == 1
+        unit_cell_orientations = unit_cell_orientations * dimer_mask
+
+        # We are just looking at the (pi,pi) momentum
+        unit_cell_phases = numpy.exp(1.0j*numpy.pi*numpy.asarray([cx+cy for (cx, cy, _) in unit_cells]))
+        pi_pi_fourier = unit_cell_orientations * numpy.expand_dims(unit_cell_phases, -1)
+        return numpy.mean(pi_pi_fourier, axis=0)
+
+
     def get_heightmaps(self):
         # To assign a height to each vertex, make the path through the vertices, passing through each edge.
         # treat the vertices connecting unit cells as a single vertex, since in the perfect dimer ground states they

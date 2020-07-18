@@ -4,11 +4,13 @@ import numpy
 
 CLIENT_SINGLETON = None
 
+
 def get_client_singleton():
     global CLIENT_SINGLETON
     if CLIENT_SINGLETON is None:
         CLIENT_SINGLETON = samplers.DWaveSampler()
     return CLIENT_SINGLETON
+
 
 class MachineTransverseFieldHelper:
     def __init__(self, s_map_file='dwave_energies/dw_2000q_2_1.txt'):
