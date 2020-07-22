@@ -66,8 +66,9 @@ if __name__ == "__main__":
             experiment_data_path = os.path.join(experiment_dir, "data")
 
             # Runs experiment and saves results.
-            experiment.run_experiment_or_load(experiment_data_path)
+            data, energies, scalars = experiment.run_experiment_or_load(experiment_data_path)
             experiment.save_experiment_config(os.path.join(experiment_dir, 'config.pickle'))
+            experiment.draw_min_energy_dimers(data, energies, experiment_dir)
             print("Done with experiment: {}".format(i))
             return experiment_dir
 
@@ -181,6 +182,9 @@ if __name__ == "__main__":
             pyplot.plot(i_s, v_s, 'x--')
             pyplot.savefig(os.path.join(base_directory, "{}.svg".format(k)))
             pyplot.clf()
+
+        with open(os.path.join(base_directory, "scalars.pickle"), 'wb') as w:
+            pickle.dump(scalars, w)
 
         plot_functions = [flippable_phase, orientation_phase, psi_phase]
         for plot_fn in plot_functions:

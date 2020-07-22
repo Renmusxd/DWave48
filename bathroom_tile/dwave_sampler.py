@@ -1,4 +1,5 @@
 from dwave.system import samplers
+from bathroom_tile.mocksampler import columnar
 import scipy.interpolate
 import numpy
 
@@ -75,7 +76,6 @@ class DWaveSampler:
         self.dry_run = dry_run
 
     def sample_ising(self, hs, edges, num_reads=1, auto_scale=True, transverse_field=0.0):
-
         if self.initial_state:
             raise NotImplementedError()
 
@@ -92,7 +92,18 @@ class DWaveSampler:
         else:
             s = 1.0
 
-        all_vars = list(sorted(set([v for edge in edges for v in [edge[0], edge[1]]])))
+        all_vars = numpy.asarray(list(sorted(set([v for edge in edges for v in [edge[0], edge[1]]]))))
+
+        j_ratio = self.field_helper.j_for_s(s)
+        edge_j = max(edges.values())
+        gamma_ratio = transverse_field / (edge_j * j_ratio)
+
+        print("Sampling with:")
+        print("\ts:\t{}".format(s))
+        print("\tj:\t{}".format(edge_j))
+        print("\tB(s):\t{}".format(j_ratio))
+        print("\tg:\t{}".format(transverse_field))
+        print("\tg/(j B(s)):\t{}".format(gamma_ratio))
 
         if not self.dry_run:
             machine_sampler = get_client_singleton()
@@ -102,11 +113,16 @@ class DWaveSampler:
             data = [[sample[k] for k in all_vars] for sample, _, num_occ in dwave_samples.data() for _ in range(num_occ)]
             data = numpy.asarray(data).T
 
-            return DWaveResponse(data, energies, all_vars, s=s, j=self.field_helper.j_for_s(s), gamma=transverse_field)
+            return DWaveResponse(data, energies, all_vars, s=s, j=j_ratio, gamma=transverse_field)
+        elif self.dry_run == "columnar" or (type(self.dry_run) == float and self.dry_run > gamma_ratio):
+            data = numpy.expand_dims([columnar(v) for v in all_vars], axis=-1)
+            data = numpy.tile(data, (1,num_reads))
+            energies = numpy.zeros((num_reads,))
+            return DWaveResponse(data, energies, all_vars, s=s, j=j_ratio, gamma=transverse_field)
         else:
             data = numpy.random.choice(a=[-1, 1], size=(len(all_vars), num_reads), p=[0.5, 0.5])
             energies = numpy.zeros((num_reads,))
-            return DWaveResponse(data, energies, all_vars, s=s, j=self.field_helper.j_for_s(s), gamma=transverse_field)
+            return DWaveResponse(data, energies, all_vars, s=s, j=j_ratio, gamma=transverse_field)
 
 
 class DWaveResponse:

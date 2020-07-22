@@ -3,7 +3,7 @@
 #$ -cwd
 #$ -m a
 #$ -M sumnerh@bu.edu
-#$ -l h_rt=144:00:00
+#$ -l h_rt=168:00:00
 
 SHARD=$((SGE_TASK_ID - 1))
 OUTPUT_DIR=$1

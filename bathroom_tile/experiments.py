@@ -158,8 +158,11 @@ class ExperimentConfig:
             print("\tDone!")
         return result_dict
 
-    def add_default_analyzers(self):
+    def add_default_analyzers(self, filter=None):
         def analyzer(analyzer_fn):
+            if filter:
+                if analyzer_fn.__name__ not in filter:
+                    return analyzer_fn
             self.add_analysis(analyzer_fn)
             return analyzer_fn
 

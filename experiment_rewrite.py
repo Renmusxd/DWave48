@@ -3,6 +3,8 @@ import numpy
 import pickle
 import os
 
+from bathroom_tile.experiments import draw_dimers
+
 
 class BathroomTileExperiment:
     def __init__(self, sampler, unit_cell_rect=None, base_ej_over_kt=39.72, j=1.0, gamma=0.0, graph=None,
@@ -86,6 +88,22 @@ class BathroomTileExperiment:
             return data, energies, scalars
         else:
             return results
+
+    def draw_min_energy_dimers(self, data, energies, base_dir):
+        i = numpy.argmin(energies)
+        data = data[:,i]
+
+        data = {var: value for var, value in zip(self.graph.all_vars, data)}
+
+        draw_dimers(os.path.join(base_dir, "front_min_energy_dimers.svg"), self.graph.edges, data,
+                    front=True, color_on_orientation=False)
+        draw_dimers(os.path.join(base_dir, "front_min_energy_dimers_color.svg"), self.graph.edges, data,
+                    front=True, color_on_orientation=True)
+
+        # draw_dimers(os.path.join(base_dir, "rear_min_energy_dimers.svg"), self.graph.edges, data,
+        #             front=False, color_on_orientation=False)
+        # draw_dimers(os.path.join(base_dir, "rear_min_energy_dimers_color.svg"), self.graph.edges, data,
+        #             front=False, color_on_orientation=False)
 
     @staticmethod
     def save_data(dirpath, data, energies, scalars=None):
