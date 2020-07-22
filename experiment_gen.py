@@ -10,7 +10,7 @@ def experiment_generator(base_dir):
     # nj = 5
     beta = 39.72
 
-    num_reads = 10
+    num_reads = 10000
     therm_time = int(1e8)
     run_time = int(1e8)
     sampling_freq = run_time // num_reads
