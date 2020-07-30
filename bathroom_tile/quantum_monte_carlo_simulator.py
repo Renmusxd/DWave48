@@ -53,9 +53,7 @@ class QuantumMonteCarloSampler:
 
         energies, states = lattice.run_quantum_monte_carlo_sampling(self.beta, self.timesteps, experiments,
                                                                     sampling_wait_buffer=self.wait_time,
-                                                                    sampling_freq=self.sampling_freq,
-                                                                    use_loop_update=False,
-                                                                    use_heatbath_diagonal_update=False)
+                                                                    sampling_freq=self.sampling_freq)
 
         # Flatten except variables
         states = states.reshape((-1, states.shape[-1]))
