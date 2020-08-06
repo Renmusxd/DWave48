@@ -1,5 +1,6 @@
 import numpy
 from bathroom_tile import graphbuilder
+from bathroom_tile.graphbuilder import LatticeVar
 
 
 class GraphAnalyzer:
@@ -480,6 +481,41 @@ class GraphAnalyzer:
         unit_cell_phases = numpy.exp(1.0j*numpy.pi*numpy.asarray([cx+cy for (cx, cy, _) in unit_cells]))
         pi_pi_fourier = unit_cell_orientations * numpy.expand_dims(unit_cell_phases, -1)
         return numpy.mean(pi_pi_fourier, axis=0)
+
+    def calculate_gl_order_parameter(self):
+        def ei(theta):
+            return numpy.exp(1.0j*theta)
+        def e_i_pi(theta):
+            return ei(numpy.pi*theta)
+        def f(lat_var):
+            if lat_var == LatticeVar.A:
+                return 0
+            elif lat_var == LatticeVar.B:
+                return 1
+            elif lat_var == LatticeVar.C:
+                return 2
+            elif lat_var == LatticeVar.D:
+                return 3
+
+        k = numpy.asarray([numpy.pi/2, -numpy.pi/2])
+        chi = numpy.asarray([e_i_pi(-0.25), e_i_pi(0.5), e_i_pi(0.25), 1.0])
+        cxs, cys, lat_vars, fronts = zip(*(graphbuilder.get_abs_var_traits(v) for v in self.graph.all_vars))
+        if any(numpy.logical_not(fronts)):
+            raise NotImplementedError("Have not yet implemented order param with periodic BC")
+
+        cxs = numpy.asarray(list(cxs))
+        cys = numpy.asarray(list(cys))
+        indxs = numpy.asarray([f(lat_var) for lat_var in lat_vars])
+
+        x_phases = ei(k[0] * cxs)
+        y_phases = ei(k[1] * cys)
+        p_phase = x_phases*y_phases
+        indx_phases = chi[indxs]
+        var_phases = p_phase * indx_phases
+
+        order = numpy.sum(numpy.expand_dims(var_phases, axis=-1) * self.var_mat, axis=0)/numpy.sum(numpy.abs(var_phases))
+        return order
+
 
 
     def get_heightmaps(self):

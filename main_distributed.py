@@ -1,4 +1,4 @@
-from bathroom_tile.experiment_metaanalysis import flippable_phase, orientation_phase, psi_phase
+from bathroom_tile.experiment_metaanalysis import flippable_phase, orientation_phase, psi_phase, gl_phase, s_phase
 from bathroom_tile import graphbuilder
 from experiment_gen import experiment_generator
 import experiment_rewrite
@@ -149,6 +149,15 @@ if __name__ == "__main__":
                     order_param = numpy.abs(psi) * numpy.cos(4 * numpy.angle(psi))
                     exp_scalars['psi_order_param'] = order_param
 
+                    order = analyzer.calculate_gl_order_parameter()
+                    pyplot.scatter(order.real, order.imag)
+                    t = numpy.linspace(0, 2 * numpy.pi, 360)
+                    pyplot.plot(numpy.cos(t), numpy.sin(t), c='b')
+                    pyplot.savefig(os.path.join(experiment_dir, "gl_order.png"))
+                    pyplot.close()
+                    exp_scalars['gl_order'] = numpy.mean(order)
+                    exp_scalars['abs_gl_order'] = numpy.mean(numpy.abs(order))
+
                     with open(scalars_path, 'wb') as w:
                         pickle.dump(exp_scalars, w)
                 else:
@@ -186,7 +195,7 @@ if __name__ == "__main__":
         with open(os.path.join(base_directory, "scalars.pickle"), 'wb') as w:
             pickle.dump(scalars, w)
 
-        plot_functions = [flippable_phase, orientation_phase, psi_phase]
+        plot_functions = [flippable_phase, orientation_phase, psi_phase, gl_phase, s_phase]
         for plot_fn in plot_functions:
             try:
                 plot_fn(base_directory, scalar_clean)

@@ -3,6 +3,7 @@ import scipy.spatial
 import collections
 import pickle
 import os
+from enum import Enum
 
 
 def get_connection_cells():
@@ -26,6 +27,53 @@ def get_var_to_connection_map():
     return {
         v: k for k, v in get_connection_cells().items()
     }
+
+
+class LatticeVar(Enum):
+    A = 1
+    B = 2
+    C = 3
+    D = 4
+
+    @staticmethod
+    def get_from_rel_var(cx, cy, rel_var):
+        dx, dy, front = get_var_to_connection_map()[rel_var]
+
+        if not is_type_a(cx, cy):
+            dx = -dx
+            dy = -dy
+
+        if dx == 0 and dy == -1:
+            return LatticeVar.A, front
+        elif dx == 1 and dy == 0:
+            return LatticeVar.B, front
+        elif dx == 0 and dy == 1:
+            return LatticeVar.C, front
+        elif dx == -1 and dy == 0:
+            return LatticeVar.D, front
+
+    def get_rel_var(self, cx, cy, front=True):
+        conns = get_connection_cells()
+        if self == LatticeVar.A:
+            dx = 0
+            dy = -1
+        elif self == LatticeVar.B:
+            dx = 1
+            dy = 0
+        elif self == LatticeVar.C:
+            dx = 0
+            dy = 1
+        elif self == LatticeVar.D:
+            dx = -1
+            dy = 0
+        else:
+            raise ValueError("Enum error: {}".format(self))
+
+        if not is_type_a(cx, cy):
+            dx = -dx
+            dy = -dy
+
+        return conns[(dx, dy, front)]
 
 
 class GraphBuilder:
@@ -414,6 +462,12 @@ def get_var_traits(index, vars_per_cell=8, unit_cells_per_row=16):
     unit_cell_x = unit_cell_index % unit_cells_per_row
     unit_cell_y = unit_cell_index // unit_cells_per_row
     return unit_cell_x, unit_cell_y, var_relative
+
+
+def get_abs_var_traits(index, vars_per_cell=8, unit_cells_per_row=16):
+    cx, cy, rel_var = get_var_traits(index, vars_per_cell=vars_per_cell, unit_cells_per_row=unit_cells_per_row)
+    lat_var, front = LatticeVar.get_from_rel_var(cx, cy, rel_var)
+    return cx, cy, lat_var, front
 
 
 def relative_pos_of_relative_index(relative_index, dist=1.0):

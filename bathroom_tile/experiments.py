@@ -442,6 +442,17 @@ class ExperimentConfig:
             abs_orientation_count = numpy.sum(numpy.abs(orientations))
             return {'abs_orientation_count': abs_orientation_count, 'orientation_count': orientation_count}
 
+        @analyzer
+        def analyzer_gl_order_param(base_dir, graph_analyzer):
+            print("\tCalculating GL order parameters")
+            order = graph_analyzer.calculate_gl_order_parameter()
+            pyplot.scatter(order.re, order.im)
+            t = numpy.linspace(0, 2*numpy.pi, 360)
+            pyplot.plot(numpy.cos(t), numpy.sin(t), c='b')
+            pyplot.savefig(os.path.join(base_dir, "gl_order.svg"))
+            pyplot.close()
+            return {'gl_order': numpy.sum(order), 'abs_gl_order': numpy.sum(numpy.abs(order))}
+
     def add_meta_analysis(self, analysis_fn):
         self.meta_analysis.append(analysis_fn)
 

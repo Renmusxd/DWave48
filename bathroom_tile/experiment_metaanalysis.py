@@ -162,56 +162,56 @@ def orientation_phase(base_dir, scalars):
     pyplot.close()
 
 
-# def psi_phase(base_dir, scalars):
-#     gamma_over_j = numpy.asarray(scalars['gamma']) / numpy.asarray(scalars['j'])
-#
-#     if 'actual_j' in scalars:
-#         # This name is weird, its actually the multiplier for j
-#         ratio = numpy.asarray(scalars['actual_j'])
-#         ej_over_kt = numpy.asarray(scalars['ej_by_kt']) * ratio
-#         gamma_over_j = gamma_over_j / ratio
-#     else:
-#         ej_over_kt = scalars['ej_by_kt']
-#     psi = scalars['psi_order_param']
-#
-#     kt_over_ej = numpy.asarray([1./jk for jk in ej_over_kt])
-#
-#     # Make a grid
-#     mgrid_x, mgrid_y = numpy.meshgrid(numpy.linspace(min(gamma_over_j), max(gamma_over_j), 1000),
-#                                       numpy.linspace(min(kt_over_ej), max(kt_over_ej), 1000))
-#     mgrid_z = scipy.interpolate.griddata((gamma_over_j, kt_over_ej), psi, (mgrid_x, mgrid_y), method='linear')
-#
-#     pyplot.contourf(mgrid_x, mgrid_y, mgrid_z)
-#     pyplot.xlabel(r'$\Gamma / J$')
-#     pyplot.ylabel(r'$kT / J$')
-#     pyplot.colorbar()
-#     pyplot.savefig(os.path.join(base_dir, 'psi_phase.svg'))
-#     pyplot.close()
-#
-#     pyplot.scatter(gamma_over_j, kt_over_ej, c=psi, cmap='jet')
-#     pyplot.xlabel(r'$\Gamma / J$')
-#     pyplot.ylabel(r'$kT / J$')
-#     pyplot.colorbar()
-#     pyplot.savefig(os.path.join(base_dir, 'psi_phase_scatter.svg'))
-#     pyplot.close()
-#
-#     pyplot.contourf(mgrid_x, mgrid_y, mgrid_z)
-#     pyplot.xlabel(r'$\Gamma / J$')
-#     pyplot.ylabel(r'$kT / J$')
-#     pyplot.xlim((0, 2.0))
-#     pyplot.ylim((0, 2.0))
-#     pyplot.colorbar()
-#     pyplot.savefig(os.path.join(base_dir, 'psi_subset_phase.svg'))
-#     pyplot.close()
-#
-#     pyplot.scatter(gamma_over_j, kt_over_ej, c=psi, cmap='jet')
-#     pyplot.xlabel(r'$\Gamma / J$')
-#     pyplot.ylabel(r'$kT / J$')
-#     pyplot.xlim((0, 2.0))
-#     pyplot.ylim((0, 2.0))
-#     pyplot.colorbar()
-#     pyplot.savefig(os.path.join(base_dir, 'psi_subset_phase_scatter.svg'))
-#     pyplot.close()
+def s_phase(base_dir, scalars):
+    gamma_over_j = numpy.asarray(scalars['gamma']) / numpy.asarray(scalars['j'])
+
+    if 'actual_j' in scalars:
+        # This name is weird, its actually the multiplier for j
+        ratio = numpy.asarray(scalars['actual_j'])
+        ej_over_kt = numpy.asarray(scalars['ej_by_kt']) * ratio
+        gamma_over_j = gamma_over_j / ratio
+    else:
+        ej_over_kt = scalars['ej_by_kt']
+    psi = scalars['s']
+
+    kt_over_ej = numpy.asarray([1./jk for jk in ej_over_kt])
+
+    # Make a grid
+    mgrid_x, mgrid_y = numpy.meshgrid(numpy.linspace(min(gamma_over_j), max(gamma_over_j), 1000),
+                                      numpy.linspace(min(kt_over_ej), max(kt_over_ej), 1000))
+    mgrid_z = scipy.interpolate.griddata((gamma_over_j, kt_over_ej), psi, (mgrid_x, mgrid_y), method='linear')
+
+    pyplot.contourf(mgrid_x, mgrid_y, mgrid_z)
+    pyplot.xlabel(r'$\Gamma / J$')
+    pyplot.ylabel(r'$kT / J$')
+    pyplot.colorbar()
+    pyplot.savefig(os.path.join(base_dir, 'machine_s_phase.svg'))
+    pyplot.close()
+
+    pyplot.scatter(gamma_over_j, kt_over_ej, c=psi, cmap='jet')
+    pyplot.xlabel(r'$\Gamma / J$')
+    pyplot.ylabel(r'$kT / J$')
+    pyplot.colorbar()
+    pyplot.savefig(os.path.join(base_dir, 'machine_s_scatter.svg'))
+    pyplot.close()
+
+    pyplot.contourf(mgrid_x, mgrid_y, mgrid_z)
+    pyplot.xlabel(r'$\Gamma / J$')
+    pyplot.ylabel(r'$kT / J$')
+    pyplot.xlim((0, 2.0))
+    pyplot.ylim((0, 2.0))
+    pyplot.colorbar()
+    pyplot.savefig(os.path.join(base_dir, 'machine_s_subset_phase.svg'))
+    pyplot.close()
+
+    pyplot.scatter(gamma_over_j, kt_over_ej, c=psi, cmap='jet')
+    pyplot.xlabel(r'$\Gamma / J$')
+    pyplot.ylabel(r'$kT / J$')
+    pyplot.xlim((0, 2.0))
+    pyplot.ylim((0, 2.0))
+    pyplot.colorbar()
+    pyplot.savefig(os.path.join(base_dir, 'machine_s_subset_phase_scatter.svg'))
+    pyplot.close()
 
 
 def psi_phase(base_dir, scalars):
@@ -263,6 +263,57 @@ def psi_phase(base_dir, scalars):
     pyplot.ylim((0, 2.0))
     pyplot.colorbar()
     pyplot.savefig(os.path.join(base_dir, 'complex_angle_subset_phase_scatter.svg'))
+    pyplot.close()
+
+def gl_phase(base_dir, scalars):
+    gamma_over_j = numpy.asarray(scalars['gamma']) / numpy.asarray(scalars['j'])
+
+    if 'actual_j' in scalars:
+        # This name is weird, its actually the multiplier for j
+        ratio = numpy.asarray(scalars['actual_j'])
+        ej_over_kt = numpy.asarray(scalars['ej_by_kt']) * ratio
+        gamma_over_j = gamma_over_j / ratio
+    else:
+        ej_over_kt = scalars['ej_by_kt']
+    psi = scalars['abs_gl_order']
+
+    kt_over_ej = numpy.asarray([1. / jk for jk in ej_over_kt])
+
+    # Make a grid
+    mgrid_x, mgrid_y = numpy.meshgrid(numpy.linspace(min(gamma_over_j), max(gamma_over_j), 1000),
+                                      numpy.linspace(min(kt_over_ej), max(kt_over_ej), 1000))
+    mgrid_z = scipy.interpolate.griddata((gamma_over_j, kt_over_ej), psi, (mgrid_x, mgrid_y), method='linear')
+
+    pyplot.contourf(mgrid_x, mgrid_y, mgrid_z)
+    pyplot.xlabel(r'$\Gamma / J$')
+    pyplot.ylabel(r'$kT / J$')
+    pyplot.colorbar()
+    pyplot.savefig(os.path.join(base_dir, 'gl_phase.svg'))
+    pyplot.close()
+
+    pyplot.scatter(gamma_over_j, kt_over_ej, c=psi, cmap='jet')
+    pyplot.xlabel(r'$\Gamma / J$')
+    pyplot.ylabel(r'$kT / J$')
+    pyplot.colorbar()
+    pyplot.savefig(os.path.join(base_dir, 'gl_scatter.svg'))
+    pyplot.close()
+
+    pyplot.contourf(mgrid_x, mgrid_y, mgrid_z)
+    pyplot.xlabel(r'$\Gamma / J$')
+    pyplot.ylabel(r'$kT / J$')
+    pyplot.xlim((0, 2.0))
+    pyplot.ylim((0, 2.0))
+    pyplot.colorbar()
+    pyplot.savefig(os.path.join(base_dir, 'gl_subset_phase.svg'))
+    pyplot.close()
+
+    pyplot.scatter(gamma_over_j, kt_over_ej, c=psi, cmap='jet')
+    pyplot.xlabel(r'$\Gamma / J$')
+    pyplot.ylabel(r'$kT / J$')
+    pyplot.xlim((0, 2.0))
+    pyplot.ylim((0, 2.0))
+    pyplot.colorbar()
+    pyplot.savefig(os.path.join(base_dir, 'gl_subset_phase_scatter.svg'))
     pyplot.close()
 
 def unit_cell_divergence_plot(base_dir, scalars):
