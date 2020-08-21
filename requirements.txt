@@ -1,4 +1,5 @@
 dwave-ocean-sdk
+py_monte_carlo
 scipy
 matplotlib
 numpy>=1.18.1
