@@ -4,7 +4,7 @@ import sys
 
 
 if __name__ == "__main__":
-    experiment_name = "data/full_phase_diagram_periodic_sweep_qmc"
+    experiment_name = "data/full_phase_diagram_periodic_sweep_qmc_MANUAL"
 
     configs_file = os.path.join(experiment_name, "configs.pickle")
 

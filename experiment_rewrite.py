@@ -52,16 +52,19 @@ class BathroomTileExperiment:
 
     @staticmethod
     def load_experiment_config(filepath):
-        with open(filepath, 'rb') as f:
-            obj = pickle.load(f)
-        return BathroomTileExperiment(obj['sampler'],
-                                      j=obj['j'],
-                                      graph=obj['graph'],
-                                      gamma=obj['gamma'],
-                                      num_reads=obj['num_reads'],
-                                      base_ej_over_kt=obj['base_ej_over_kt'],
-                                      sampler_build_kwargs=obj['sampler_build_kwargs'],
-                                      sampler_sample_kwargs=obj['sampler_sample_kwargs'])
+        try:
+            with open(filepath, 'rb') as f:
+                obj = pickle.load(f)
+            return BathroomTileExperiment(obj['sampler'],
+                                          j=obj['j'],
+                                          graph=obj['graph'],
+                                          gamma=obj['gamma'],
+                                          num_reads=obj['num_reads'],
+                                          base_ej_over_kt=obj['base_ej_over_kt'],
+                                          sampler_build_kwargs=obj['sampler_build_kwargs'],
+                                          sampler_sample_kwargs=obj['sampler_sample_kwargs'])
+        except:
+            return None
 
     def run_experiment_or_load(self, dirpath, allow_run=True):
         if not os.path.exists(dirpath):
