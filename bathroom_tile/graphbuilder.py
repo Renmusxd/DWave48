@@ -80,17 +80,16 @@ class GraphBuilder:
     connection_cells = get_connection_cells()
     var_connections = get_var_to_connection_map()
 
-    def __init__(self, j=1.0, clone_strength=5.0):
+    def __init__(self, j=1.0, clone_strength=None):
         self.unit_cells = set()
         self.j = j
         self.clone = clone_strength
         self.existing_cell_connections = set()
-        self.periodic_boundaries = set()
+        self.dwave_periodic_boundary = None
 
-    def add_periodic_boundary(self, loc, adj):
-        if loc in self.unit_cells:
-            raise Exception("Attempting to superimpose boundary and cell: {}".format(loc))
-        self.periodic_boundaries.add((loc, adj))
+    def enable_dwave_periodic_boundary(self, enclose_rect, clone_j=1.0):
+        self.dwave_periodic_boundary = enclose_rect
+        self.clone = clone_j
 
     def build(self, h=0, ideal_periodic_boundaries=False, calculate_traits=True, calculate_distances=True):
         connections = {}
@@ -123,6 +122,8 @@ class GraphBuilder:
             hs = {v: h for v in set(v for vs in connections for v in vs)}
         else:
             hs = {}
+
+        cloned_cells = None
 
         if ideal_periodic_boundaries:
             horizontal_ends = {}
@@ -177,29 +178,34 @@ class GraphBuilder:
                 edge = (min_v, max_v)
                 periodic_connections.update({edge: -self.j})
             connections.update(periodic_connections)
+        elif self.dwave_periodic_boundary is not None:
+            (min_x, max_x), (min_y, max_y) = self.dwave_periodic_boundary
+            cloned_cells = set()
+            for ux in range(min_x, max_x):
+                bond_j = self.j
+                if ux % 2 != 0:
+                    bond_j = -bond_j
+                connections.update(make_periodic_connection((ux, min_y-1), (ux, min_y), bond_j, -self.clone))
+                connections.update(make_periodic_connection((ux, max_y), (ux, max_y-1), bond_j, -self.clone))
+                cloned_cells.add((ux, min_y - 1))
+                cloned_cells.add((ux, max_y))
 
-
-        # TODO: fix
-        # for loc, adj in self.periodic_boundaries:
-        #     if is_type_a(*loc):
-        #         cella, cellb = loc, adj
-        #     else:
-        #         cella, cellb = adj, loc
-        #     dx = cellb[0] - cella[0]
-        #     dy = cellb[1] - cella[1]
-        #     v_front = GraphBuilder.connection_cells[(dx, dy, True)]
-        #     v_rear = GraphBuilder.connection_cells[(dx, dy, False)]
-        #     clone_edges = make_boundary_cell(loc, adj, v_front, v_rear, -self.j, -self.clone)
-        #     connections.update(clone_edges)
-        #     for (va, vb), j in clone_edges.items():
-        #         raise NotImplementedError("Have not implemented periodic boundary conditions with transverse field.")
+            for uy in range(min_y, max_y):
+                connections.update(make_periodic_connection((min_x-1, uy), (min_x, uy), -self.j, -self.clone))
+                connections.update(make_periodic_connection((max_x, uy), (max_x-1, uy), -self.j, -self.clone))
+                cloned_cells.add((min_x-1, uy))
+                cloned_cells.add((max_x, uy))
 
         return Graph(connections, hs, calculate_distances=calculate_distances,
-                     calculate_traits=calculate_traits, periodic_boundaries=ideal_periodic_boundaries)
+                     calculate_traits=calculate_traits, periodic_boundaries=ideal_periodic_boundaries,
+                     clone_j=self.clone, cloned_cells=cloned_cells)
 
     def add_cells(self, cells, fronts=None):
         if fronts is None:
-            fronts = (True for _ in range(len(cells)))
+            fronts = True
+        if type(fronts) == bool:
+            front = bool(fronts)
+            fronts = (front for _ in range(len(cells)))
         for (x, y), front in zip(cells, fronts):
             self.add_unit_cell(x, y, front=front)
 
@@ -230,7 +236,7 @@ class Graph:
     """Aspects of the graph which do not rely on data"""
 
     def __init__(self, edges, hs, graph_cache_dir='graphcache', vars_per_cell=8, unit_cells_per_row=16,
-                 calculate_traits=True, periodic_boundaries=False, calculate_distances=True):
+                 calculate_traits=True, periodic_boundaries=False, calculate_distances=True, clone_j=None, cloned_cells=None):
         self.edges = edges
         self.hs = hs
         self.vars_per_cell = vars_per_cell
@@ -240,6 +246,8 @@ class Graph:
         self.edge_lookup = {edge: i for i, edge in enumerate(self.sorted_edges)}
         self.all_vars = list(sorted(set(v for edge in self.edges for v in edge)))
         self.periodic_boundaries = periodic_boundaries
+        self.clone_j = clone_j
+        self.cloned_cells = cloned_cells or {}
 
         if not self.load_if_needed() and calculate_traits:
             print("\tCalculating graph features")
@@ -257,6 +265,10 @@ class Graph:
             self.save()
         elif calculate_traits:
             print("\tLoaded graph features")
+
+    def var_is_in_cloned_cell(self, var):
+        cx, cy, _ = get_var_traits(var)
+        return (cx, cy) in self.cloned_cells
 
     def __hash__(self):
         return hash((
@@ -299,6 +311,8 @@ class Graph:
             self.vertex_euclidean_distances = config.vertex_euclidean_distances
             self.dimer_euclidean_distances = config.dimer_euclidean_distances
             self.dimer_vertex_distances = config.dimer_vertex_distances
+            self.clone_j = config.clone_j
+            self.cloned_cells = config.cloned_cells
             return True
         except AttributeError as e:
             print(e)
@@ -310,6 +324,13 @@ class Graph:
         filename = os.path.join(self.graph_cache, '{}.pickle'.format(hash(self)))
         with open(filename, 'wb') as w:
             pickle.dump(self, w)
+
+    def non_cloned_edges(self):
+        def is_cloned(edge):
+            if self.clone_j is not None:
+                return self.edges[edge] == self.clone_j
+            return False
+        return [edge for edge in self.sorted_edges if not is_cloned(edge)]
 
     def calculate_euclidean_distances(self, variables, inner_edge_d=1.0, output_edge_d=1.0):
         points = numpy.asarray([get_var_cartesian(var, self.vars_per_cell, self.unit_cells_per_row,
@@ -601,47 +622,65 @@ def variable_distances(edges):
     return dist_mat, all_vars
 
 
-def make_boundary_cell(boundary_cell, connected_cell, v_front, v_rear, bond_j, clone_j, vars_per_cell=8):
-    def make_edge(c1, c2, v1, v2):
-        abs_va = var_num(c1[0], c1[1], v1)
-        abs_vb = var_num(c2[0], c2[1], v2)
-        # Enter them in sorted order
-        min_v = min(abs_va, abs_vb)
-        max_v = max(abs_va, abs_vb)
-        return min_v, max_v
+def make_periodic_connection(place_in_cell, connecting_sides_of_cell, bond_j, clone_j, vars_per_cell=8):
+    cx, cy = place_in_cell
+    ux, uy = connecting_sides_of_cell
 
-    def make_edge_for_v(c1, c2, v):
-        return make_edge(c1, c2, v, v)
+    dx, dy = ux - cx, uy - cy
+    assert abs(dx) + abs(dy) == 1
 
-    # variable on opposite side of unit cell from front
-    v_intermediate = (v_front + vars_per_cell // 2) % vars_per_cell
+    if is_type_a(ux, uy):
+        dx = -dx
+        dy = -dy
+    conns = get_connection_cells()
+    front_conn = conns[(dx, dy, True)]
+    front_clone = get_var_across(front_conn)
 
-    front_clone_edge = make_edge_for_v(boundary_cell, connected_cell, v_front)
-    extra_clone_edge = make_edge(boundary_cell, boundary_cell, v_front, v_intermediate)
-    front_rear_edge = make_edge(boundary_cell, boundary_cell, v_intermediate, v_rear)
-    rear_clone_edge = make_edge_for_v(boundary_cell, connected_cell, v_rear)
+    # Vertical is identical, horizontal is flipped
+    if abs(dx) == 1 and abs(dy) == 0:
+        dx = -dx
+        dy = -dy
 
-    return {
-        front_clone_edge: clone_j,
-        extra_clone_edge: clone_j,
-        front_rear_edge: bond_j,
-        rear_clone_edge: clone_j
-    }
+    back_conn = conns[(dx, dy, False)]
+    back_clone = get_var_across(back_conn)
+
+    front_from = var_num(ux, uy, front_conn, vars_per_cell=vars_per_cell)
+    front_to = var_num(cx, cy, front_conn, vars_per_cell=vars_per_cell)
+    front_to_clone = var_num(cx, cy, front_clone, vars_per_cell=vars_per_cell)
+
+    back_from = var_num(ux, uy, back_conn, vars_per_cell=vars_per_cell)
+    back_to = var_num(cx, cy, back_conn, vars_per_cell=vars_per_cell)
+    back_to_clone = var_num(cx, cy, back_clone, vars_per_cell=vars_per_cell)
+
+    connections = [
+        # Clones
+        ((front_from, front_to), clone_j),
+        ((back_from, back_to), clone_j),
+        ((front_to, front_to_clone), clone_j),
+        ((back_to, back_to_clone), clone_j),
+        # Bonds
+        ((front_to, back_to_clone), bond_j),
+        ((back_to, front_to_clone), bond_j)
+    ]
+
+    return {(min(a, b), max(a, b)): j for ((a, b), j) in connections}
+
+
+def get_var_across(cell_var):
+    return (cell_var + 4) % 8
 
 
 def is_type_a(x, y):
     return ((x + y) % 2) == 0
 
 
-def chimera_index(unit_cell, var_index):
-    vars_per_cell = 8
+def chimera_index(unit_cell, var_index, vars_per_cell=8):
     return (unit_cell * vars_per_cell) + var_index
 
 
-def var_num(unit_x, unit_y, var_unit):
-    units_per_row = 16
+def var_num(unit_x, unit_y, var_unit, vars_per_cell=8, units_per_row=16):
     unit_num = unit_x + unit_y * units_per_row
-    return chimera_index(unit_num, var_unit)
+    return chimera_index(unit_num, var_unit, vars_per_cell=vars_per_cell)
 
 
 def convert_for_cell(unit_x, unit_y, var_dict):
@@ -664,10 +703,10 @@ def make_unit_cell_a(unit_x, unit_y, j=1.0, front=True):
     else:
         # Above but +2
         return convert_for_cell(unit_x, unit_y, {
-            (2, 6): -bond,
+            (2, 6): bond,
             (3, 6): bond,
             (3, 7): bond,
-            (2, 7): bond,
+            (2, 7): -bond,
         })
 
 
@@ -685,8 +724,8 @@ def make_unit_cell_b(unit_x, unit_y, j=1.0, front=True):
         # Above but +2
         return convert_for_cell(unit_x, unit_y, {
             (2, 6): bond,
-            (3, 6): bond,
-            (3, 7): -bond,
+            (3, 6): -bond,
+            (3, 7): bond,
             (2, 7): bond,
         })
 

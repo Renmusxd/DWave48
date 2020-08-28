@@ -97,66 +97,67 @@ if __name__ == "__main__":
             else:
                 experiment = experiment.get()
                 if experiment:
+                    bathroom_tile.draw_dwave.draw_graph(experiment.graph, os.path.join(experiment_dir, 'chimera.svg'))
                     result = experiment.run_experiment_or_load(os.path.join(experiment_dir, 'data'), allow_run=False)
                     if result is not None:
                         data, energies, exp_scalars = result
                         analyzer = bathroom_tile.graphanalysis.GraphAnalyzer(experiment.graph, experiment.graph.all_vars,
                                                                              data, energies)
 
-                        orientations = analyzer.calculate_difference_order_parameter()
-                        orientation_count = numpy.mean(orientations)
-                        abs_orientation_count = numpy.mean(numpy.abs(orientations))
-                        exp_scalars['orientation_count'] = orientation_count
-                        exp_scalars['abs_orientation_count'] = abs_orientation_count
+                        # orientations = analyzer.calculate_difference_order_parameter()
+                        # orientation_count = numpy.mean(orientations)
+                        # abs_orientation_count = numpy.mean(numpy.abs(orientations))
+                        # exp_scalars['orientation_count'] = orientation_count
+                        # exp_scalars['abs_orientation_count'] = abs_orientation_count
+                        #
+                        # flippables = analyzer.get_flippable_squares()
+                        # flippable_count = numpy.mean(numpy.sum(flippables, axis=0))
+                        # exp_scalars['flippable_count'] = flippable_count
+                        #
+                        # complex_pi_pi = analyzer.calculate_complex_angle_order_parameter()
+                        # complex_pi_pi_average = numpy.mean((complex_pi_pi**4).real)
+                        # exp_scalars['complex_pi_pi_average'] = complex_pi_pi_average
+                        #
+                        # # Structure factor
+                        # # Get diagonal unit cell distance
+                        # x0, y0 = graphbuilder.get_unit_cell_cartesian(0,0)
+                        # x1, y1 = graphbuilder.get_unit_cell_cartesian(1,1)
+                        # r = numpy.sqrt((x1-x0)**2 + (y1-y0)**2)
+                        #
+                        # ks = numpy.linspace(-numpy.pi, numpy.pi, 17)  # -8pi/8 .. + 0
+                        # kas = numpy.dstack([ks, ks])
+                        #
+                        # KAs, KBs = numpy.meshgrid(ks, ks)
+                        # KAs_xy = numpy.dstack([KAs, KAs])/r
+                        # KBs_xy = numpy.dstack([KBs, -KBs])/r
+                        #
+                        # orders = analyzer.calculate_fourier_order_parameter(k_nesw=KAs_xy, k_nwse=KBs_xy)
+                        # orders = numpy.mean(orders, axis=-1)
+                        # fourier_order = numpy.sum(orders, axis=0)
+                        #
+                        # try:
+                        #     pyplot.contourf(KAs, KBs, fourier_order)
+                        #     pyplot.colorbar()
+                        #     pyplot.xlabel(r'k(1,1)')
+                        #     pyplot.ylabel(r'k(1,-1)')
+                        #     pyplot.savefig(os.path.join(experiment_dir, 'fourier_order.png'))
+                        #     pyplot.close()
+                        # except Exception as e:
+                        #     print(e)
+                        #
+                        # pi_pi_order_params = orders[:,-1,-1]
+                        # psi = 2*(pi_pi_order_params[0] + 1.0j*pi_pi_order_params[1])
+                        # order_param = numpy.abs(psi) * numpy.cos(4 * numpy.angle(psi))
+                        # exp_scalars['psi_order_param'] = order_param
 
-                        flippables = analyzer.get_flippable_squares()
-                        flippable_count = numpy.mean(numpy.sum(flippables, axis=0))
-                        exp_scalars['flippable_count'] = flippable_count
-
-                        complex_pi_pi = analyzer.calculate_complex_angle_order_parameter()
-                        complex_pi_pi_average = numpy.mean((complex_pi_pi**4).real)
-                        exp_scalars['complex_pi_pi_average'] = complex_pi_pi_average
-
-                        # Structure factor
-                        # Get diagonal unit cell distance
-                        x0, y0 = graphbuilder.get_unit_cell_cartesian(0,0)
-                        x1, y1 = graphbuilder.get_unit_cell_cartesian(1,1)
-                        r = numpy.sqrt((x1-x0)**2 + (y1-y0)**2)
-
-                        ks = numpy.linspace(-numpy.pi, numpy.pi, 17)  # -8pi/8 .. + 0
-                        kas = numpy.dstack([ks, ks])
-
-                        KAs, KBs = numpy.meshgrid(ks, ks)
-                        KAs_xy = numpy.dstack([KAs, KAs])/r
-                        KBs_xy = numpy.dstack([KBs, -KBs])/r
-
-                        orders = analyzer.calculate_fourier_order_parameter(k_nesw=KAs_xy, k_nwse=KBs_xy)
-                        orders = numpy.mean(orders, axis=-1)
-                        fourier_order = numpy.sum(orders, axis=0)
-
-                        try:
-                            pyplot.contourf(KAs, KBs, fourier_order)
-                            pyplot.colorbar()
-                            pyplot.xlabel(r'k(1,1)')
-                            pyplot.ylabel(r'k(1,-1)')
-                            pyplot.savefig(os.path.join(experiment_dir, 'fourier_order.png'))
-                            pyplot.close()
-                        except Exception as e:
-                            print(e)
-
-                        pi_pi_order_params = orders[:,-1,-1]
-                        psi = 2*(pi_pi_order_params[0] + 1.0j*pi_pi_order_params[1])
-                        order_param = numpy.abs(psi) * numpy.cos(4 * numpy.angle(psi))
-                        exp_scalars['psi_order_param'] = order_param
-
-                        order = analyzer.calculate_gl_order_parameter()
+                        order, abs_order = analyzer.calculate_gl_order_parameter()
                         pyplot.scatter(order.real, order.imag)
                         t = numpy.linspace(0, 2 * numpy.pi, 360)
                         pyplot.plot(numpy.cos(t), numpy.sin(t), c='b')
                         pyplot.savefig(os.path.join(experiment_dir, "gl_order.png"))
                         pyplot.close()
                         exp_scalars['gl_order'] = numpy.mean(order)
-                        exp_scalars['abs_gl_order'] = numpy.mean(numpy.abs(order))
+                        exp_scalars['abs_gl_order'] = numpy.mean(abs_order)
 
                         with open(scalars_path, 'wb') as w:
                             pickle.dump(exp_scalars, w)
@@ -195,7 +196,7 @@ if __name__ == "__main__":
         with open(os.path.join(base_directory, "scalars.pickle"), 'wb') as w:
             pickle.dump(scalars, w)
 
-        plot_functions = [flippable_phase, orientation_phase, psi_phase, gl_phase, s_phase]
+        plot_functions = [gl_phase]
         for plot_fn in plot_functions:
             try:
                 plot_fn(base_directory, scalar_clean)

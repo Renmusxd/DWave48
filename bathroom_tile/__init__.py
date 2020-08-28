@@ -1,2 +1,3 @@
 import bathroom_tile.graphbuilder as graphbuilder
 import bathroom_tile.graphanalysis as graphanalysis
+import bathroom_tile.draw_dwave as draw_dwave

@@ -7,7 +7,7 @@ from bathroom_tile.experiments import draw_dimers
 
 
 class BathroomTileExperiment:
-    def __init__(self, sampler, unit_cell_rect=None, base_ej_over_kt=39.72, j=1.0, gamma=0.0, graph=None,
+    def __init__(self, sampler, unit_cell_rect=None, dwave_periodic_j=None, base_ej_over_kt=39.72, j=1.0, gamma=0.0, graph=None,
                  num_reads=10000, graph_build_kwargs=None, sampler_build_kwargs=None, sampler_sample_kwargs=None):
         if unit_cell_rect:
             (min_x, max_x), (min_y, max_y) = unit_cell_rect
@@ -16,7 +16,15 @@ class BathroomTileExperiment:
                 (x, y)
                 for x in range(min_x, max_x)
                 for y in range(min_y, max_y)
-            ])
+            ], fronts=True)
+            if dwave_periodic_j:
+                gb.add_cells([
+                    (x, y)
+                    for x in range(min_x, max_x)
+                    for y in range(min_y, max_y)
+                ], fronts=False)
+                gb.enable_dwave_periodic_boundary(unit_cell_rect, clone_j=dwave_periodic_j)
+
             gb.connect_all()
             graph_build_kwargs = graph_build_kwargs or {}
             self.graph = gb.build(calculate_traits=False, calculate_distances=False, **graph_build_kwargs)

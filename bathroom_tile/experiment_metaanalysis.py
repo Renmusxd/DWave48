@@ -285,6 +285,7 @@ def gl_phase(base_dir, scalars):
     mgrid_z = scipy.interpolate.griddata((gamma_over_j, kt_over_ej), psi, (mgrid_x, mgrid_y), method='linear')
 
     pyplot.contourf(mgrid_x, mgrid_y, mgrid_z)
+    pyplot.title(r'$\vert \phi \vert$')
     pyplot.xlabel(r'$\Gamma / J$')
     pyplot.ylabel(r'$kT / J$')
     pyplot.colorbar()
@@ -292,6 +293,7 @@ def gl_phase(base_dir, scalars):
     pyplot.close()
 
     pyplot.scatter(gamma_over_j, kt_over_ej, c=psi, cmap='jet')
+    pyplot.title(r'$\vert \phi \vert$')
     pyplot.xlabel(r'$\Gamma / J$')
     pyplot.ylabel(r'$kT / J$')
     pyplot.colorbar()
@@ -299,6 +301,7 @@ def gl_phase(base_dir, scalars):
     pyplot.close()
 
     pyplot.contourf(mgrid_x, mgrid_y, mgrid_z)
+    pyplot.title(r'$\vert \phi \vert$')
     pyplot.xlabel(r'$\Gamma / J$')
     pyplot.ylabel(r'$kT / J$')
     pyplot.xlim((0, 2.0))
@@ -308,6 +311,7 @@ def gl_phase(base_dir, scalars):
     pyplot.close()
 
     pyplot.scatter(gamma_over_j, kt_over_ej, c=psi, cmap='jet')
+    pyplot.title(r'$\vert \phi \vert$')
     pyplot.xlabel(r'$\Gamma / J$')
     pyplot.ylabel(r'$kT / J$')
     pyplot.xlim((0, 2.0))

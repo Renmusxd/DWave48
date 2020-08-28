@@ -62,6 +62,9 @@ class GraphAnalyzer:
         sample = var_mat[:, lowest_e]
         self.lowest_e_sample = {k: sample[i] for i, k in enumerate(self.graph.all_vars)}
 
+        # Sided dimers
+        self.dimer_matrix_sides = None
+
     def get_correlation_matrix(self):
         if self.variable_correlations is None:
             self.variable_correlations = calculate_correlation_matrix(self.var_mat)
@@ -98,8 +101,10 @@ class GraphAnalyzer:
         if self.dimer_matrix is None:
             # Get flat versions of variables, values, and make lookup tables.
             var_lookup = {v: k for k, v in enumerate(self.var_map)}
-            edge_list = numpy.asarray([(var_lookup[a], var_lookup[b]) for a, b in self.graph.sorted_edges])
-            edge_values = numpy.asarray([self.graph.edges[edge] for edge in self.graph.sorted_edges])
+
+            valid_edges = self.graph.non_cloned_edges()
+            edge_list = numpy.asarray([(var_lookup[a], var_lookup[b]) for a, b in valid_edges])
+            edge_values = numpy.asarray([self.graph.edges[edge] for edge in valid_edges])
             a_values = self.var_mat[edge_list[:, 0], :]
             b_values = self.var_mat[edge_list[:, 1], :]
 
@@ -112,6 +117,23 @@ class GraphAnalyzer:
             # So satisfied edges are negative, broken are positive
             self.dimer_matrix = spin_product * edge_signs
         return self.dimer_matrix
+
+    def get_valid_sided_edges(self):
+        valid_edges = self.graph.non_cloned_edges()
+        f = graphbuilder.is_front
+        return numpy.asarray([f(a) for (a, b) in valid_edges if f(a) == f(b)])
+
+    def get_sided_dimer_matrices(self):
+        if self.dimer_matrix_sides is None:
+            # Get flat versions of variables, values, and make lookup tables.
+            var_lookup = {v: k for k, v in enumerate(self.var_map)}
+            dimers = self.get_dimer_matrix()
+
+            edge_sides = self.get_valid_sided_edges()
+            front_dimers = dimers[edge_sides, :]
+            rear_dimers = dimers[numpy.logical_not(edge_sides), :]
+            self.dimer_matrix_sides = (front_dimers, rear_dimers)
+        return self.dimer_matrix_sides
 
     def get_dimer_correlations(self):
         """
@@ -160,13 +182,13 @@ class GraphAnalyzer:
             bx, by, _ = graphbuilder.get_var_traits(varb, self.graph.vars_per_cell, self.graph.unit_cells_per_row)
             return ax == bx and ay == by
 
-        return [is_diagonal(*edge) for edge in self.graph.sorted_edges]
+        return [is_diagonal(*edge) for edge in self.graph.non_cloned_edges()]
 
     def get_nesw_dimer_mask(self):
-        return [get_variable_orientation(*edge) == -1 for edge in self.graph.sorted_edges]
+        return [get_variable_orientation(*edge) == -1 for edge in self.graph.non_cloned_edges()]
 
     def get_nwse_dimer_mask(self):
-        return [get_variable_orientation(*edge) == 1 for edge in self.graph.sorted_edges]
+        return [get_variable_orientation(*edge) == 1 for edge in self.graph.non_cloned_edges()]
 
     def get_diagonal_dimer_matrix(self):
         """Same as get_dimer_matrix but only dimers which are across edges within each 4-cell."""
@@ -299,7 +321,7 @@ class GraphAnalyzer:
             connection_indices = {k: i for i, k in enumerate(flippable_squares)}
             self.dimer_to_flippable_matrix = numpy.zeros((len(self.graph.edges), len(flippable_squares)),
                                                          dtype=numpy.int8)
-            for i, (vara, varb) in enumerate(self.graph.sorted_edges):
+            for i, (vara, varb) in enumerate(self.graph.non_cloned_edges()):
                 ax, ay, arel = graphbuilder.get_var_traits(vara, vars_per_cell=self.graph.vars_per_cell,
                                                            unit_cells_per_row=self.graph.unit_cells_per_row)
                 bx, by, brel = graphbuilder.get_var_traits(varb, vars_per_cell=self.graph.vars_per_cell,
@@ -367,7 +389,7 @@ class GraphAnalyzer:
 
         var_lookup = {v: k for k,v in enumerate(self.var_map)}
         diagonal_edges = numpy.asarray([(var_lookup[a], var_lookup[b])
-                                        for (a, b), m in zip(self.graph.sorted_edges, mask) if m])
+                                        for (a, b), m in zip(self.graph.non_cloned_edges(), mask) if m])
         diagonal_as, diagonal_bs = diagonal_edges[:, 0], diagonal_edges[:, 1]
         varxs, varys = var_poss[:, 0], var_poss[:, 1]
         edge_diff_xs = numpy.sign(varxs[diagonal_as] - varxs[diagonal_bs])
@@ -399,7 +421,7 @@ class GraphAnalyzer:
 
         var_lookup = {v: k for k, v in enumerate(self.var_map)}
         diagonal_edges = numpy.asarray([(var_lookup[a], var_lookup[b])
-                                        for (a, b), m in zip(self.graph.sorted_edges, mask) if m])
+                                        for (a, b), m in zip(self.graph.non_cloned_edges(), mask) if m])
         diagonal_as, diagonal_bs = diagonal_edges[:, 0], diagonal_edges[:, 1]
 
         varxs, varys = var_poss[:, 0], var_poss[:, 1]
@@ -439,11 +461,11 @@ class GraphAnalyzer:
         unit_cells, _ = self.graph.calculate_unit_cells()
         unit_cell_lookup = {(cx, cy): i for i, (cx, cy, _) in enumerate(unit_cells)}
         n_unit_cells = len(unit_cells)
-        n_edges = len(self.graph.sorted_edges)
+        n_edges = len(self.graph.non_cloned_edges())
         edge_to_unit_cell_orientations = numpy.zeros((n_unit_cells, n_edges), dtype=numpy.complex128)
         edge_to_unit_cell_count = numpy.zeros((n_unit_cells, n_edges))
 
-        for edge_indx, (var_a, var_b) in enumerate(self.graph.sorted_edges):
+        for edge_indx, (var_a, var_b) in enumerate(self.graph.non_cloned_edges()):
             unit_ax, unit_ay, _ = graphbuilder.get_var_traits(var_a)
             unit_bx, unit_by, _ = graphbuilder.get_var_traits(var_b)
             if unit_ax == unit_bx and unit_ay == unit_by:
@@ -500,23 +522,39 @@ class GraphAnalyzer:
         k = numpy.asarray([numpy.pi/2, -numpy.pi/2])
         chi = numpy.asarray([e_i_pi(-0.25), e_i_pi(0.5), e_i_pi(0.25), 1.0])
         cxs, cys, lat_vars, fronts = zip(*(graphbuilder.get_abs_var_traits(v) for v in self.graph.all_vars))
-        if any(numpy.logical_not(fronts)):
-            raise NotImplementedError("Have not yet implemented order param with periodic BC")
 
-        cxs = numpy.asarray(list(cxs))
-        cys = numpy.asarray(list(cys))
-        indxs = numpy.asarray([f(lat_var) for lat_var in lat_vars])
+        not_cloned = numpy.logical_not([self.graph.var_is_in_cloned_cell(v) for v in self.graph.all_vars])
 
-        x_phases = ei(k[0] * cxs)
-        y_phases = ei(k[1] * cys)
-        p_phase = x_phases*y_phases
-        indx_phases = chi[indxs]
-        var_phases = p_phase * indx_phases
+        cxs = numpy.asarray(list(cxs))[not_cloned]
+        cys = numpy.asarray(list(cys))[not_cloned]
+        lat_vars = numpy.asarray(list(lat_vars))[not_cloned]
+        fronts = numpy.asarray(list(fronts))[not_cloned]
+        var_mat = self.var_mat[not_cloned, :]
 
-        order = numpy.sum(numpy.expand_dims(var_phases, axis=-1) * self.var_mat, axis=0)/numpy.sum(numpy.abs(var_phases))
-        return order
+        order = 0
+        abs_order = 0
+        for front in [True, False]:
+            sub_cxs = cxs[fronts == front]
+            sub_cys = cys[fronts == front]
+            sub_lat_vars = lat_vars[fronts == front]
+            sub_var_mat = var_mat[fronts == front]
 
+            indxs = numpy.asarray([f(lat_var) for lat_var in sub_lat_vars])
 
+            x_phases = ei(k[0] * sub_cxs)
+            y_phases = ei(k[1] * sub_cys)
+            p_phase = x_phases*y_phases
+            indx_phases = chi[indxs]
+            var_phases = p_phase * indx_phases
+
+            new_order = numpy.sum(numpy.expand_dims(var_phases, axis=-1) * sub_var_mat, axis=0) / numpy.sum(numpy.abs(var_phases))
+            if front == False:
+                # On rear we need to shift by 1 on x and y => multiply by i
+                new_order = new_order * 1.0j
+
+            order = order + new_order
+            abs_order = abs_order + numpy.abs(new_order)
+        return order, abs_order
 
     def get_heightmaps(self):
         # To assign a height to each vertex, make the path through the vertices, passing through each edge.
@@ -524,12 +562,12 @@ class GraphAnalyzer:
         # should not have broken bonds.
 
         # All the not diagonal edges are effectively the vertices which can have height values
-        effective_height_locations = [edge for edge, is_diagonal in zip(self.graph.sorted_edges,
+        effective_height_locations = [edge for edge, is_diagonal in zip(self.graph.non_cloned_edges(),
                                                                         self.get_diagonal_dimer_mask())
                                       if not is_diagonal]
         # Make a matrix from diagonal edges to vertices
 
-        diagonal_edges = [edge for edge, is_diagonal in zip(self.graph.sorted_edges, self.get_diagonal_dimer_mask())
+        diagonal_edges = [edge for edge, is_diagonal in zip(self.graph.non_cloned_edges(), self.get_diagonal_dimer_mask())
                           if is_diagonal]
         diagonal_lookup = {
             edge: i for i, edge in enumerate(diagonal_edges)
