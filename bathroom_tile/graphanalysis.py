@@ -538,6 +538,8 @@ class GraphAnalyzer:
             sub_cys = cys[fronts == front]
             sub_lat_vars = lat_vars[fronts == front]
             sub_var_mat = var_mat[fronts == front]
+            if len(sub_var_mat) == 0:
+                continue
 
             indxs = numpy.asarray([f(lat_var) for lat_var in sub_lat_vars])
 

@@ -7,7 +7,7 @@ import numpy
 def experiment_generator(base_dir):
     ng = 10
     nj = 10
-    beta = 10.0
+    beta = 100.0
 
     num_experiments = 8
     num_reads = 10000
