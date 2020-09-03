@@ -6,13 +6,14 @@ from bathroom_tile.dwave_sampler import MachineTransverseFieldHelper
 
 
 class QuantumMonteCarloSampler:
-    def __init__(self, beta=39.72, thermalization_time=1e6, timesteps=2e6, sampling_freq=1e3, semiclassical=True,
-                 simulate_machine_fields=False, s_map_file='dwave_energies/dw_2000q_2_1.txt'):
+    def __init__(self, beta=39.72, thermalization_time=1e6, timesteps=2e6, sampling_freq=1e3, semiclassical=False,
+                 rvb=False, simulate_machine_fields=False, s_map_file='dwave_energies/dw_2000q_2_1.txt'):
         self.beta = beta
         self.timesteps = int(timesteps)
         self.wait_time = int(thermalization_time)
         self.sampling_freq = int(sampling_freq)
         self.semiclassical = semiclassical
+        self.rvb = rvb
 
         if simulate_machine_fields:
             self.field_helper = MachineTransverseFieldHelper(s_map_file=s_map_file)
@@ -51,6 +52,7 @@ class QuantumMonteCarloSampler:
         lattice = py_monte_carlo.Lattice(edges)
         lattice.set_transverse_field(transverse_field)
         lattice.set_enable_semiclassical_update(self.semiclassical)
+        lattice.set_enable_rvb_update(self.rvb)
 
         energies, states = lattice.run_quantum_monte_carlo_sampling(self.beta, self.timesteps, experiments,
                                                                     sampling_wait_buffer=self.wait_time,
