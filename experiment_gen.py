@@ -1,25 +1,26 @@
 from experiment_rewrite import BathroomTileExperiment
 from bathroom_tile import quantum_monte_carlo_simulator
+from bathroom_tile import dwave_sampler
 import os
 import numpy
 
 
 def experiment_generator(base_dir):
-    ng = 10
+    ng = 20
     nj = 10
     beta = 100.0
 
     num_experiments = 8
-    num_reads = 10000
-    therm_time = int(1e5)
-    run_time = int(1e5)
+    num_reads = 1000
+    therm_time = int(1e6)
+    run_time = int(1e6)
 
     sampling_freq = num_experiments*(run_time // num_reads)
 
     # mtfh = dwave_sampler.MachineTransverseFieldHelper()
 
-    js = 1./numpy.linspace(10*beta, 1.0, nj)
-    gamma_ratios = 10**numpy.linspace(-2, numpy.log10(3), ng)
+    js = 1./numpy.linspace(2*beta, 1.0, nj)
+    gamma_ratios = numpy.linspace(0.01, 2.0, ng)
     JS, GS = numpy.meshgrid(js, gamma_ratios)
     samples_to_take = list(zip(JS.flatten(), GS.flatten()))
 
@@ -33,10 +34,10 @@ def experiment_generator(base_dir):
         if os.path.exists(config_pickle):
             experiment = BathroomTileExperiment.load_experiment_config(config_pickle)
         else:
-            min_x = 7
-            max_x = 15
+            min_x = 0
+            max_x = 16
             min_y = 0
-            max_y = 8
+            max_y = 16
             unit_cell_rect = ((min_x, max_x), (min_y, max_y))
             experiment = BathroomTileExperiment(quantum_monte_carlo_simulator.QuantumMonteCarloSampler,
                                                 unit_cell_rect=unit_cell_rect,

@@ -21,6 +21,7 @@ class LazyExperiment:
         if self.experiment:
             return self.experiment
         elif self.experiment_base_path:
+            print(self.experiment_base_path)
             experiment_pickle_path = os.path.join(self.experiment_base_path, 'config.pickle')
             return experiment_rewrite.BathroomTileExperiment.load_experiment_config(experiment_pickle_path)
         else:
@@ -162,7 +163,11 @@ if __name__ == "__main__":
                         with open(scalars_path, 'wb') as w:
                             pickle.dump(exp_scalars, w)
                     else:
+                        print("No response {}".format(i))
                         exp_scalars = {}
+                else:
+                    print("No experiment {}".format(i))
+                    exp_scalars = {}
 
             for k, v in exp_scalars.items():
                 scalars[k][i] = v

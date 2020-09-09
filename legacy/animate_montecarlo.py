@@ -1,11 +1,9 @@
 from matplotlib import pyplot
 import py_monte_carlo
-from bathroom_tile import monte_carlo_simulator, graphbuilder, graphanalysis
-from bathroom_tile.experiments import ExperimentConfig
+from bathroom_tile import monte_carlo_simulator
+from experiment_rewrite import BathroomTileExperiment
 from bathroom_tile.graphbuilder import get_var_cartesian, get_dimer_vertices_for_edge, get_unit_cell_cartesian, \
     get_var_traits, calculate_variable_direction, is_unit_cell_type_a
-from bathroom_tile.graphdrawing import get_var_pos
-import numpy
 
 from defect_distances import identify_defects
 
@@ -56,11 +54,19 @@ def top_left_staggered(v):
 
 
 if __name__ == "__main__":
-    config = ExperimentConfig('/tmp/experiment',
-                              monte_carlo_simulator.MonteCarloSampler,
-                              build_kwargs={'ideal_periodic_boundaries': True})
-    config.build_graph(min_x=0, max_x=16, min_y=0, max_y=16, calculate_traits=True, calculate_distances=False)
-    edges = config.graph.edges
+    min_x = 0 + 1
+    max_x = 8 - 1
+    min_y = 0 + 1
+    max_y = 8 - 1
+    unit_cell_rect = ((min_x, max_x), (min_y, max_y))
+    experiment = BathroomTileExperiment(monte_carlo_simulator.MonteCarloSampler,
+                                        unit_cell_rect=unit_cell_rect,
+                                        dwave_periodic_j=1.0,
+                                        j=j, gamma=abs_gamma, num_reads=num_reads,
+                                        # sampler_build_kwargs={'dry_run': 1.0}
+                                        )
+
+    edges = experiment.graph.edges
     variables = set()
     for a, b in edges:
         variables.add(a)
@@ -78,7 +84,7 @@ if __name__ == "__main__":
     energies = energies[0]
     states = states[0]
 
-    _, _, extra_info = identify_defects(config.graph, states, energies)
+    _, _, extra_info = identify_defects(experiment.graph, states, energies)
     _, _, _, (vertex_average_x, vertex_average_y), shift, charges = extra_info
 
     positive_defects = charges > 0

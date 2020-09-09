@@ -3,17 +3,19 @@ import py_monte_carlo
 import numpy
 
 from bathroom_tile.dwave_sampler import MachineTransverseFieldHelper
+from bathroom_tile.mocksampler import columnar
 
 
 class QuantumMonteCarloSampler:
     def __init__(self, beta=39.72, thermalization_time=1e6, timesteps=2e6, sampling_freq=1e3, semiclassical=False,
-                 rvb=False, simulate_machine_fields=False, s_map_file='dwave_energies/dw_2000q_2_1.txt'):
+                 rvb=False, simulate_machine_fields=False, s_map_file='dwave_energies/dw_2000q_2_1.txt', dry_run=None):
         self.beta = beta
         self.timesteps = int(timesteps)
         self.wait_time = int(thermalization_time)
         self.sampling_freq = int(sampling_freq)
         self.semiclassical = semiclassical
         self.rvb = rvb
+        self.dry_run = dry_run
 
         if simulate_machine_fields:
             self.field_helper = MachineTransverseFieldHelper(s_map_file=s_map_file)
@@ -40,32 +42,46 @@ class QuantumMonteCarloSampler:
             min_e = min(transverse_field, min_j)
             max_abs_e = max(abs(max_e), abs(min_e))
 
-        edges = [((all_vars_lookup[va], all_vars_lookup[vb]), j * j_mult / max_abs_e) for (va, vb), j in edges.items()]
-        transverse_field = transverse_field / max_abs_e
+        if self.dry_run is None:
+            edges = [((all_vars_lookup[va], all_vars_lookup[vb]), j * j_mult / max_abs_e) for (va, vb), j in
+                     edges.items()]
+            transverse_field = transverse_field / max_abs_e
 
-        effective_timesteps = self.timesteps - self.wait_time
-        samples_per_experiment = effective_timesteps / self.sampling_freq
-        experiments = int(numpy.ceil(num_reads / samples_per_experiment))
+            effective_timesteps = self.timesteps - self.wait_time
+            samples_per_experiment = effective_timesteps / self.sampling_freq
+            experiments = int(numpy.ceil(num_reads / samples_per_experiment))
 
-        print("(Running {} independent experiments each making {} samples)".format(experiments, samples_per_experiment))
+            print("(Running {} independent experiments each making {} samples)".format(experiments,
+                                                                                       samples_per_experiment))
 
-        lattice = py_monte_carlo.Lattice(edges)
-        lattice.set_transverse_field(transverse_field)
-        lattice.set_enable_semiclassical_update(self.semiclassical)
-        lattice.set_enable_rvb_update(self.rvb)
+            lattice = py_monte_carlo.Lattice(edges)
+            lattice.set_transverse_field(transverse_field)
+            lattice.set_enable_semiclassical_update(self.semiclassical)
+            lattice.set_enable_rvb_update(self.rvb)
 
-        energies, states = lattice.run_quantum_monte_carlo_sampling(self.beta, self.timesteps, experiments,
-                                                                    sampling_wait_buffer=self.wait_time,
-                                                                    sampling_freq=self.sampling_freq)
+            energies, states = lattice.run_quantum_monte_carlo_sampling(self.beta, self.timesteps, experiments,
+                                                                        sampling_wait_buffer=self.wait_time,
+                                                                        sampling_freq=self.sampling_freq)
 
-        # Flatten except variables
-        states = states.reshape((-1, states.shape[-1]))
-        states = states * 2 - 1
-        average_energy = numpy.mean(energies)
-        edges_dict = dict(edges)
-        energies = [graphbuilder.energy_of_bonds(edges_dict, sample) for sample in states]
+            # Flatten except variables
+            states = states.reshape((-1, states.shape[-1]))
+            states = states * 2 - 1
+            average_energy = numpy.mean(energies)
+            edges_dict = dict(edges)
+            energies = [graphbuilder.energy_of_bonds(edges_dict, sample) for sample in states]
 
-        return QuantumMonteCarloResponse(states, energies, average_actual_energy=average_energy)
+            return QuantumMonteCarloResponse(states, energies, average_actual_energy=average_energy)
+        elif self.dry_run == "columnar" or (type(self.dry_run) == float and self.dry_run > transverse_field):
+            print("Ordered")
+            data = numpy.expand_dims([columnar(v) for v in all_vars], axis=-1)
+            data = numpy.tile(data, (1,num_reads)).T
+            energies = numpy.zeros((num_reads,))
+            return QuantumMonteCarloResponse(data, energies, all_vars)
+        else:
+            print("Random")
+            data = numpy.random.choice(a=[-1, 1], size=(len(all_vars), num_reads), p=[0.5, 0.5]).T
+            energies = numpy.zeros((num_reads,))
+            return QuantumMonteCarloResponse(data, energies, all_vars)
 
 
 class QuantumMonteCarloResponse:

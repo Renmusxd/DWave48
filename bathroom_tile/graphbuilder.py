@@ -91,7 +91,7 @@ class GraphBuilder:
         self.dwave_periodic_boundary = enclose_rect
         self.clone = clone_j
 
-    def build(self, h=0, ideal_periodic_boundaries=False, calculate_traits=True, calculate_distances=True):
+    def build(self, h=0, ideal_periodic_boundaries=False, calculate_traits=True, calculate_distances=True, ideal_clones=False):
         connections = {}
         for x, y, front in self.unit_cells:
             if is_type_a(x, y):
@@ -185,14 +185,18 @@ class GraphBuilder:
                 bond_j = self.j
                 if ux % 2 != 0:
                     bond_j = -bond_j
-                connections.update(make_periodic_connection((ux, min_y-1), (ux, min_y), bond_j, -self.clone))
-                connections.update(make_periodic_connection((ux, max_y), (ux, max_y-1), bond_j, -self.clone))
+                connections.update(make_periodic_connection((ux, min_y-1), (ux, min_y), bond_j, -self.clone,
+                                                            ideal_clones=ideal_clones))
+                connections.update(make_periodic_connection((ux, max_y), (ux, max_y-1), bond_j, -self.clone,
+                                                            ideal_clones=ideal_clones))
                 cloned_cells.add((ux, min_y - 1))
                 cloned_cells.add((ux, max_y))
 
             for uy in range(min_y, max_y):
-                connections.update(make_periodic_connection((min_x-1, uy), (min_x, uy), -self.j, -self.clone))
-                connections.update(make_periodic_connection((max_x, uy), (max_x-1, uy), -self.j, -self.clone))
+                connections.update(make_periodic_connection((min_x-1, uy), (min_x, uy), -self.j, -self.clone,
+                                                            ideal_clones=ideal_clones))
+                connections.update(make_periodic_connection((max_x, uy), (max_x-1, uy), -self.j, -self.clone,
+                                                            ideal_clones=ideal_clones))
                 cloned_cells.add((min_x-1, uy))
                 cloned_cells.add((max_x, uy))
 
@@ -622,7 +626,7 @@ def variable_distances(edges):
     return dist_mat, all_vars
 
 
-def make_periodic_connection(place_in_cell, connecting_sides_of_cell, bond_j, clone_j, vars_per_cell=8):
+def make_periodic_connection(place_in_cell, connecting_sides_of_cell, bond_j, clone_j, vars_per_cell=8, ideal_clones=False):
     cx, cy = place_in_cell
     ux, uy = connecting_sides_of_cell
 
@@ -652,16 +656,21 @@ def make_periodic_connection(place_in_cell, connecting_sides_of_cell, bond_j, cl
     back_to = var_num(cx, cy, back_conn, vars_per_cell=vars_per_cell)
     back_to_clone = var_num(cx, cy, back_clone, vars_per_cell=vars_per_cell)
 
-    connections = [
-        # Clones
-        ((front_from, front_to), clone_j),
-        ((back_from, back_to), clone_j),
-        ((front_to, front_to_clone), clone_j),
-        ((back_to, back_to_clone), clone_j),
-        # Bonds
-        ((front_to, back_to_clone), bond_j),
-        ((back_to, front_to_clone), bond_j)
-    ]
+    if ideal_clones:
+        connections = [
+            ((front_from, back_from), bond_j)
+        ]
+    else:
+        connections = [
+            # Clones
+            ((front_from, front_to), clone_j),
+            ((back_from, back_to), clone_j),
+            ((front_to, front_to_clone), clone_j),
+            ((back_to, back_to_clone), clone_j),
+            # Bonds
+            ((front_to, back_to_clone), bond_j),
+            ((back_to, front_to_clone), bond_j)
+        ]
 
     return {(min(a, b), max(a, b)): j for ((a, b), j) in connections}
 

@@ -511,11 +511,11 @@ class GraphAnalyzer:
             return ei(numpy.pi*theta)
         def f(lat_var):
             if lat_var == LatticeVar.A:
-                return 0
+                return 2
             elif lat_var == LatticeVar.B:
                 return 1
             elif lat_var == LatticeVar.C:
-                return 2
+                return 0
             elif lat_var == LatticeVar.D:
                 return 3
 
@@ -526,7 +526,7 @@ class GraphAnalyzer:
         not_cloned = numpy.logical_not([self.graph.var_is_in_cloned_cell(v) for v in self.graph.all_vars])
 
         cxs = numpy.asarray(list(cxs))[not_cloned]
-        cys = numpy.asarray(list(cys))[not_cloned]
+        cys = -numpy.asarray(list(cys))[not_cloned]
         lat_vars = numpy.asarray(list(lat_vars))[not_cloned]
         fronts = numpy.asarray(list(fronts))[not_cloned]
         var_mat = self.var_mat[not_cloned, :]
@@ -543,6 +543,15 @@ class GraphAnalyzer:
 
             indxs = numpy.asarray([f(lat_var) for lat_var in sub_lat_vars])
 
+            # from matplotlib import pyplot
+            # cs = numpy.asarray(['blue', 'red'])
+            # sub_var_indices = ((sub_var_mat+1) // 2)[:,0]
+            # plot_xs = sub_cxs + (1.0*(indxs==1) - 1.0*(indxs==3))*0.25
+            # plot_ys = sub_cys + (1.0*(indxs==2) - 1.0*(indxs==0))*0.25
+            # pyplot.scatter(plot_xs, plot_ys, c=cs[sub_var_indices])
+            # pyplot.gca().invert_yaxis()
+            # pyplot.show()
+
             x_phases = ei(k[0] * sub_cxs)
             y_phases = ei(k[1] * sub_cys)
             p_phase = x_phases*y_phases
@@ -556,6 +565,7 @@ class GraphAnalyzer:
 
             order = order + new_order
             abs_order = abs_order + numpy.abs(new_order)
+            print("Order: {}".format(abs_order))
         return order, abs_order
 
     def get_heightmaps(self):

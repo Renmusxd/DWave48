@@ -106,15 +106,17 @@ class BathroomTileExperiment:
 
         data = {var: value for var, value in zip(self.graph.all_vars, data)}
 
-        draw_dimers(os.path.join(base_dir, "front_min_energy_dimers.svg"), self.graph.edges, data,
-                    front=True, color_on_orientation=False)
-        draw_dimers(os.path.join(base_dir, "front_min_energy_dimers_color.svg"), self.graph.edges, data,
-                    front=True, color_on_orientation=True)
+        if any(bathroom_tile.graphbuilder.is_front(v) for v in self.graph.all_vars):
+            draw_dimers(os.path.join(base_dir, "front_min_energy_dimers.svg"), self.graph.edges, data,
+                        front=True, color_on_orientation=False)
+            draw_dimers(os.path.join(base_dir, "front_min_energy_dimers_color.svg"), self.graph.edges, data,
+                        front=True, color_on_orientation=True)
 
-        # draw_dimers(os.path.join(base_dir, "rear_min_energy_dimers.svg"), self.graph.edges, data,
-        #             front=False, color_on_orientation=False)
-        # draw_dimers(os.path.join(base_dir, "rear_min_energy_dimers_color.svg"), self.graph.edges, data,
-        #             front=False, color_on_orientation=False)
+        if any(not bathroom_tile.graphbuilder.is_front(v) for v in self.graph.all_vars):
+            draw_dimers(os.path.join(base_dir, "rear_min_energy_dimers.svg"), self.graph.edges, data,
+                        front=False, color_on_orientation=False)
+            draw_dimers(os.path.join(base_dir, "rear_min_energy_dimers_color.svg"), self.graph.edges, data,
+                        front=False, color_on_orientation=True)
 
     @staticmethod
     def save_data(dirpath, data, energies, scalars=None):
