@@ -152,11 +152,41 @@ if __name__ == "__main__":
                         # exp_scalars['psi_order_param'] = order_param
 
                         order, abs_order = analyzer.calculate_gl_order_parameter()
-                        pyplot.scatter(order.real, order.imag)
+                        pyplot.scatter(order.real, order.imag, alpha=0.1)
                         t = numpy.linspace(0, 2 * numpy.pi, 360)
+
                         pyplot.plot(numpy.cos(t), numpy.sin(t), c='b')
                         pyplot.savefig(os.path.join(experiment_dir, "gl_order.png"))
                         pyplot.close()
+
+                        angles = numpy.angle(order)
+                        bins = numpy.linspace(-numpy.pi, numpy.pi, 360)
+                        s_bins = numpy.expand_dims(bins, axis=-1)
+                        min_dist_2 = numpy.abs([angles - s_bins,
+                                                (angles + 2*numpy.pi) - s_bins,
+                                                (angles - 2*numpy.pi) - s_bins])**2
+                        min_dist_2 = numpy.min(min_dist_2, axis=0)
+                        sig = 2*numpy.pi / 360
+                        d_exp = numpy.exp( - min_dist_2 / (2.0*sig))
+                        d_exp = d_exp / numpy.sum(d_exp, axis=0)
+                        blurred = numpy.mean(d_exp, axis=-1) * len(bins)
+
+                        pyplot.plot(bins / numpy.pi, blurred, 'x-')
+                        pyplot.grid()
+                        ylow, yhigh = pyplot.ylim()
+                        pyplot.ylim((0, yhigh))
+                        pyplot.xlabel(r'$\theta / \pi$')
+                        pyplot.ylabel('A label to make Matteo happy')
+                        pyplot.savefig(os.path.join(experiment_dir, "gl_hist.png"))
+                        pyplot.close()
+
+                        mu = numpy.mean(blurred)
+                        pyplot.plot(mu*numpy.cos(bins), mu*numpy.sin(bins), c='b')
+                        pyplot.plot(blurred*numpy.cos(bins), blurred*numpy.sin(bins), c='r')
+                        pyplot.grid()
+                        pyplot.savefig(os.path.join(experiment_dir, 'gl_polar_hist.png'))
+                        pyplot.close()
+
                         exp_scalars['gl_order'] = numpy.mean(order)
                         exp_scalars['abs_gl_order'] = numpy.mean(abs_order)
 
